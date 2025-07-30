@@ -256,6 +256,76 @@ func TestValueString(t *testing.T) {
 	}
 }
 
+func TestSkipBulkString(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           string
+		expectError     bool
+		nextReadExpected string
+	}{
+		{
+			name:            "skip regular bulk string",
+			input:           "$5\r\nhello\r\n+OK\r\n",
+			expectError:     false,
+			nextReadExpected: "OK",
+		},
+		{
+			name:            "skip empty bulk string",
+			input:           "$0\r\n\r\n+OK\r\n",
+			expectError:     false,
+			nextReadExpected: "OK",
+		},
+		{
+			name:            "skip null bulk string",
+			input:           "$-1\r\n+OK\r\n",
+			expectError:     false,
+			nextReadExpected: "OK",
+		},
+		{
+			name:            "skip large bulk string",
+			input:           "$10\r\n0123456789\r\n+OK\r\n",
+			expectError:     false,
+			nextReadExpected: "OK",
+		},
+		{
+			name:            "skip bulk string with binary data",
+			input:           "$6\r\n\x00\x01\x02\xff\xfe\xfd\r\n+OK\r\n",
+			expectError:     false,
+			nextReadExpected: "OK",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := protocol.NewReader(strings.NewReader(tt.input))
+			
+			// Skip the first value (bulk string)
+			err := reader.Skip()
+			if tt.expectError && err == nil {
+				t.Errorf("Skip() expected error but got none")
+			} else if !tt.expectError && err != nil {
+				t.Errorf("Skip() unexpected error = %v", err)
+			}
+			
+			if !tt.expectError {
+				// Read the next value to verify skip worked correctly
+				value, err := reader.ReadNext()
+				if err != nil {
+					t.Fatalf("ReadNext() after Skip() error = %v", err)
+				}
+				
+				if value.Type != protocol.TypeSimpleString {
+					t.Errorf("Next value type = %v, want %v", value.Type, protocol.TypeSimpleString)
+				}
+				
+				if string(value.Data) != tt.nextReadExpected {
+					t.Errorf("Next value = %q, want %q", string(value.Data), tt.nextReadExpected)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkRESPReader(b *testing.B) {
 	input := "+OK\r\n"
 	

@@ -51,7 +51,7 @@ type Client struct {
 	logger       Logger
 	metrics      MetricsCollector
 	syncTimeout  time.Duration
-	commandFilters map[string]bool
+	commandFilters map[string]struct{}
 }
 
 // ReplicationStats tracks replication statistics
@@ -101,7 +101,7 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		doneChan:     make(chan struct{}),
 		stats:        &ReplicationStats{MasterAddr: masterAddr},
 		syncTimeout:  30 * time.Second,
-		commandFilters: make(map[string]bool),
+		commandFilters: make(map[string]struct{}),
 		logger:       &defaultLogger{},
 	}
 }
@@ -133,9 +133,9 @@ func (c *Client) SetSyncTimeout(timeout time.Duration) {
 
 // SetCommandFilters sets command filters
 func (c *Client) SetCommandFilters(commands []string) {
-	c.commandFilters = make(map[string]bool)
+	c.commandFilters = make(map[string]struct{})
 	for _, cmd := range commands {
-		c.commandFilters[strings.ToUpper(cmd)] = true
+		c.commandFilters[strings.ToUpper(cmd)] = struct{}{}
 	}
 }
 
@@ -482,7 +482,7 @@ func (c *Client) processCommand(value protocol.Value) error {
 	
 	// Apply command filters
 	if len(c.commandFilters) > 0 {
-		if !c.commandFilters[cmd.Name] {
+		if _, allowed := c.commandFilters[cmd.Name]; !allowed {
 			return nil // Skip filtered command
 		}
 	}

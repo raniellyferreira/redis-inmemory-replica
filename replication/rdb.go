@@ -202,7 +202,7 @@ func (p *RDBParser) readLength() (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
-		return uint64((b&0x3F)<<8) | uint64(b2), nil
+		return uint64(b&0x3F)<<8 | uint64(b2), nil
 		
 	case 2:
 		// 32-bit length
