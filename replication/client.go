@@ -51,6 +51,9 @@ type Client struct {
 	logger         Logger
 	metrics        MetricsCollector
 	syncTimeout    time.Duration
+	connectTimeout time.Duration
+	readTimeout    time.Duration
+	writeTimeout   time.Duration
 	commandFilters map[string]struct{}
 	databases      map[int]struct{} // Which databases to replicate (empty = all)
 }
@@ -102,6 +105,9 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		doneChan:       make(chan struct{}),
 		stats:          &ReplicationStats{MasterAddr: masterAddr},
 		syncTimeout:    30 * time.Second,
+		connectTimeout: 5 * time.Second,
+		readTimeout:    30 * time.Second,
+		writeTimeout:   10 * time.Second,
 		commandFilters: make(map[string]struct{}),
 		databases:      make(map[int]struct{}), // empty = replicate all
 		logger:         &defaultLogger{},
@@ -131,6 +137,21 @@ func (c *Client) SetMetrics(metrics MetricsCollector) {
 // SetSyncTimeout sets the synchronization timeout
 func (c *Client) SetSyncTimeout(timeout time.Duration) {
 	c.syncTimeout = timeout
+}
+
+// SetConnectTimeout sets the connection timeout
+func (c *Client) SetConnectTimeout(timeout time.Duration) {
+	c.connectTimeout = timeout
+}
+
+// SetReadTimeout sets the read timeout for network operations
+func (c *Client) SetReadTimeout(timeout time.Duration) {
+	c.readTimeout = timeout
+}
+
+// SetWriteTimeout sets the write timeout for network operations
+func (c *Client) SetWriteTimeout(timeout time.Duration) {
+	c.writeTimeout = timeout
 }
 
 // SetCommandFilters sets command filters
@@ -272,14 +293,25 @@ func (c *Client) connect() error {
 	var conn net.Conn
 	var err error
 	
+	// Create dialer with timeout
+	dialer := &net.Dialer{
+		Timeout: c.connectTimeout,
+	}
+	
 	if c.tlsConfig != nil {
-		conn, err = tls.Dial("tcp", c.masterAddr, c.tlsConfig)
+		conn, err = tls.DialWithDialer(dialer, "tcp", c.masterAddr, c.tlsConfig)
 	} else {
-		conn, err = net.Dial("tcp", c.masterAddr)
+		conn, err = dialer.Dial("tcp", c.masterAddr)
 	}
 	
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
+	}
+	
+	// Set connection timeouts with enhanced error handling
+	if err := c.setConnectionTimeouts(conn); err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to set connection timeouts: %w", err)
 	}
 	
 	c.mu.Lock()
@@ -695,4 +727,97 @@ func (l *defaultLogger) Info(msg string, fields ...interface{}) {
 
 func (l *defaultLogger) Error(msg string, fields ...interface{}) {
 	// fmt.Printf("ERROR: %s %v\n", msg, fields)
+}
+
+// setConnectionTimeouts sets enhanced connection timeouts with improved error handling
+func (c *Client) setConnectionTimeouts(conn net.Conn) error {
+	now := time.Now()
+	
+	// Set read timeout with validation
+	if c.readTimeout > 0 {
+		if c.readTimeout < time.Millisecond {
+			return fmt.Errorf("read timeout too small: %v (minimum: 1ms)", c.readTimeout)
+		}
+		if c.readTimeout > 24*time.Hour {
+			return fmt.Errorf("read timeout too large: %v (maximum: 24h)", c.readTimeout)
+		}
+		if err := conn.SetReadDeadline(now.Add(c.readTimeout)); err != nil {
+			return fmt.Errorf("failed to set read deadline: %w", err)
+		}
+		c.logger.Debug("Set read timeout", "timeout", c.readTimeout)
+	}
+	
+	// Set write timeout with validation
+	if c.writeTimeout > 0 {
+		if c.writeTimeout < time.Millisecond {
+			return fmt.Errorf("write timeout too small: %v (minimum: 1ms)", c.writeTimeout)
+		}
+		if c.writeTimeout > 24*time.Hour {
+			return fmt.Errorf("write timeout too large: %v (maximum: 24h)", c.writeTimeout)
+		}
+		if err := conn.SetWriteDeadline(now.Add(c.writeTimeout)); err != nil {
+			return fmt.Errorf("failed to set write deadline: %w", err)
+		}
+		c.logger.Debug("Set write timeout", "timeout", c.writeTimeout)
+	}
+	
+	return nil
+}
+
+// refreshConnectionTimeouts refreshes connection timeouts during active operation
+func (c *Client) refreshConnectionTimeouts() error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	
+	if conn == nil {
+		return fmt.Errorf("no active connection")
+	}
+	
+	return c.setConnectionTimeouts(conn)
+}
+
+// validateTimeoutConfiguration validates all timeout settings
+func (c *Client) validateTimeoutConfiguration() error {
+	// Validate connect timeout
+	if c.connectTimeout > 0 {
+		if c.connectTimeout < 100*time.Millisecond {
+			return fmt.Errorf("connect timeout too small: %v (minimum: 100ms)", c.connectTimeout)
+		}
+		if c.connectTimeout > 5*time.Minute {
+			return fmt.Errorf("connect timeout too large: %v (maximum: 5m)", c.connectTimeout)
+		}
+	}
+	
+	// Validate sync timeout
+	if c.syncTimeout > 0 {
+		if c.syncTimeout < time.Second {
+			return fmt.Errorf("sync timeout too small: %v (minimum: 1s)", c.syncTimeout)
+		}
+		if c.syncTimeout > time.Hour {
+			return fmt.Errorf("sync timeout too large: %v (maximum: 1h)", c.syncTimeout)
+		}
+	}
+	
+	// Validate read timeout
+	if c.readTimeout > 0 {
+		if c.readTimeout < time.Millisecond {
+			return fmt.Errorf("read timeout too small: %v (minimum: 1ms)", c.readTimeout)
+		}
+		if c.readTimeout > 24*time.Hour {
+			return fmt.Errorf("read timeout too large: %v (maximum: 24h)", c.readTimeout)
+		}
+	}
+	
+	// Validate write timeout
+	if c.writeTimeout > 0 {
+		if c.writeTimeout < time.Millisecond {
+			return fmt.Errorf("write timeout too small: %v (minimum: 1ms)", c.writeTimeout)
+		}
+		if c.writeTimeout > 24*time.Hour {
+			return fmt.Errorf("write timeout too large: %v (maximum: 24h)", c.writeTimeout)
+		}
+	}
+	
+	return nil
 }

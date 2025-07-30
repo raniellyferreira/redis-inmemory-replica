@@ -91,6 +91,9 @@ func New(opts ...Option) (*Replica, error) {
 	}
 	
 	syncMgr.SetSyncTimeout(cfg.syncTimeout)
+	syncMgr.SetConnectTimeout(cfg.connectTimeout)
+	syncMgr.SetReadTimeout(cfg.readTimeout)
+	syncMgr.SetWriteTimeout(cfg.writeTimeout)
 	syncMgr.SetCommandFilters(cfg.commandFilters)
 	syncMgr.SetDatabases(cfg.databases)
 	

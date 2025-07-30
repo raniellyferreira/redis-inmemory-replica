@@ -74,6 +74,21 @@ func (sm *SyncManager) SetSyncTimeout(timeout time.Duration) {
 	sm.client.SetSyncTimeout(timeout)
 }
 
+// SetConnectTimeout sets the connection timeout
+func (sm *SyncManager) SetConnectTimeout(timeout time.Duration) {
+	sm.client.SetConnectTimeout(timeout)
+}
+
+// SetReadTimeout sets the read timeout
+func (sm *SyncManager) SetReadTimeout(timeout time.Duration) {
+	sm.client.SetReadTimeout(timeout)
+}
+
+// SetWriteTimeout sets the write timeout
+func (sm *SyncManager) SetWriteTimeout(timeout time.Duration) {
+	sm.client.SetWriteTimeout(timeout)
+}
+
 // SetCommandFilters sets command filters
 func (sm *SyncManager) SetCommandFilters(commands []string) {
 	sm.client.SetCommandFilters(commands)

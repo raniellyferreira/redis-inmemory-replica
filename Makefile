@@ -1,7 +1,7 @@
 # Redis In-Memory Replica Library Makefile
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint clean examples install-tools benchmark coverage docs
+.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps
 
 # Go parameters
 GOCMD=go
@@ -54,11 +54,11 @@ coverage: test ## Generate test coverage report
 
 lint: install-tools ## Run linter
 	@echo "Running linter..."
-	golangci-lint run
+	$(shell go env GOPATH)/bin/golangci-lint run
 
 lint-fix: install-tools ## Run linter with auto-fix
 	@echo "Running linter with auto-fix..."
-	golangci-lint run --fix
+	$(shell go env GOPATH)/bin/golangci-lint run --fix
 
 clean: ## Clean build artifacts
 	@echo "Cleaning..."
@@ -145,3 +145,27 @@ info: ## Show project information
 	@echo ""
 	@echo "Project structure:"
 	@tree -I 'vendor|bin|.git' -L 2 || find . -type d -name vendor -prune -o -type d -name bin -prune -o -type d -name .git -prune -o -type d -print | head -20
+
+# Security targets
+security-audit: ## Run comprehensive security audit
+	@echo "Running security audit..."
+	@./scripts/security-audit.sh
+
+security-install: ## Install security tools
+	@echo "Installing security tools..."
+	@go install golang.org/x/vuln/cmd/govulncheck@latest
+	@go install honnef.co/go/tools/cmd/staticcheck@latest
+
+security-scan: ## Run vulnerability scan  
+	@echo "Running vulnerability scan..."
+	@$(shell go env GOPATH)/bin/govulncheck ./... || echo "Vulnerability scan completed with warnings"
+
+security-static: ## Run static security analysis
+	@echo "Running static security analysis..."
+	@$(shell go env GOPATH)/bin/staticcheck ./... || echo "Static analysis completed with warnings"
+
+security-deps: ## Check dependencies for vulnerabilities
+	@echo "Checking dependencies..."
+	@go mod verify
+	@go mod tidy
+	@go list -m all

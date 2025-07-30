@@ -79,7 +79,7 @@ The library supports extensive configuration through functional options:
 replica, err := redisreplica.New(
     // Master connection
     redisreplica.WithMaster("redis.example.com:6379"),
-    redisreplica.WithMasterAuth("password"),
+    redisreplica.WithMasterAuth(os.Getenv("REDIS_PASSWORD")), // Use environment variable
     redisreplica.WithTLS(&tls.Config{...}),
     
     // Local server
@@ -98,6 +98,108 @@ replica, err := redisreplica.New(
     redisreplica.WithServerEnabled(true),
 )
 ```
+
+## Security
+
+This library includes comprehensive security features for production deployments:
+
+### TLS Configuration
+
+Use secure TLS with proper certificate validation:
+
+```go
+// Option 1: Custom TLS configuration
+tlsConfig := &tls.Config{
+    ServerName:         "redis.example.com",
+    InsecureSkipVerify: false, // Always verify certificates in production
+    MinVersion:         tls.VersionTLS12,
+}
+
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("redis.example.com:6380"),
+    redisreplica.WithTLS(tlsConfig),
+)
+
+// Option 2: Secure TLS with defaults (recommended)
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("redis.example.com:6380"),
+    redisreplica.WithSecureTLS("redis.example.com"), // Secure defaults
+)
+```
+
+### Authentication & Authorization
+
+Configure strong authentication using environment variables:
+
+```go
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("redis.example.com:6379"),
+    redisreplica.WithMasterAuth(os.Getenv("REDIS_MASTER_PASSWORD")), // Never hardcode
+    redisreplica.WithReplicaAuth(os.Getenv("REDIS_REPLICA_PASSWORD")), // For replica server
+    redisreplica.WithReadOnly(true), // Enforce read-only mode
+)
+```
+
+**Security Note**: Always use environment variables or secure configuration management for credentials. Never hardcode passwords in source code.
+
+### Network Security
+
+Configure proper timeouts and limits:
+
+```go
+replica, err := redisreplica.New(
+    redisreplica.WithConnectTimeout(10*time.Second),
+    redisreplica.WithReadTimeout(30*time.Second),
+    redisreplica.WithWriteTimeout(10*time.Second),
+    redisreplica.WithMaxMemory(100*1024*1024), // 100MB limit
+)
+```
+
+### Database Filtering
+
+Limit replication to specific databases:
+
+```go
+replica, err := redisreplica.New(
+    redisreplica.WithDatabases([]int{0, 1}), // Only replicate databases 0 and 1
+)
+```
+
+### Security Auditing
+
+The library includes comprehensive security scanning that filters out false positives:
+
+```bash
+# Run comprehensive security audit
+make security-audit
+
+# Install security tools
+make security-install
+
+# Run vulnerability scan
+make security-scan
+
+# Run static security analysis
+make security-static
+```
+
+**Enhanced Security Features:**
+- **Smart Secret Detection**: Distinguishes between actual hardcoded secrets and legitimate variable names
+- **Test File Exclusion**: Security scans automatically ignore test files and examples
+- **Safe Operation Marking**: Use `// safe: reason` comments for intentional unsafe operations
+- **CI/CD Integration**: Automated security checks in GitHub Actions prevent security issues
+
+### Security Best Practices
+
+1. **Always use TLS** in production environments
+2. **Configure strong authentication** for both master and replica
+3. **Set appropriate timeouts** to prevent hanging connections
+4. **Use memory limits** to prevent DoS attacks
+5. **Filter databases** to limit exposure
+6. **Monitor and log** security events
+7. **Keep dependencies updated** and scan for vulnerabilities
+
+For detailed security guidelines, see [SECURITY.md](SECURITY.md).
 
 ## Examples
 
