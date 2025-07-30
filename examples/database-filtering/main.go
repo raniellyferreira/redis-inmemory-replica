@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/raniellyferreira/redis-inmemory-replica"
@@ -14,12 +15,18 @@ func main() {
 	fmt.Println("🔍 Redis In-Memory Replica - Database Filtering Example")
 	fmt.Println("========================================================")
 
+	// Get configuration from environment variables with secure defaults
+	masterAddr := getEnvOrDefault("REDIS_MASTER_ADDR", "localhost:6379")
+	masterAuth := os.Getenv("REDIS_MASTER_AUTH") // Empty if not set
+	replicaAddr := getEnvOrDefault("REDIS_REPLICA_ADDR", ":6380")
+	replicaAuth := os.Getenv("REDIS_REPLICA_AUTH") // Empty if not set - use env var for security
+
 	// Create a replica that only replicates specific databases
 	replica, err := redisreplica.New(
-		redisreplica.WithMaster("localhost:6379"),
-		redisreplica.WithMasterAuth(""), // Add password if your Redis requires auth
-		redisreplica.WithReplicaAddr(":6380"),
-		redisreplica.WithReplicaAuth("replica-password"), // Clients must auth to replica
+		redisreplica.WithMaster(masterAddr),
+		redisreplica.WithMasterAuth(masterAuth), // Uses env var or empty string
+		redisreplica.WithReplicaAddr(replicaAddr),
+		redisreplica.WithReplicaAuth(replicaAuth), // Uses env var or empty string  
 		redisreplica.WithDatabases([]int{0, 1, 2}), // Only replicate databases 0, 1, and 2
 		redisreplica.WithSyncTimeout(30*time.Second),
 	)
@@ -29,10 +36,14 @@ func main() {
 	defer replica.Close()
 
 	fmt.Println("📊 Configuration:")
-	fmt.Println("  Master: localhost:6379")
-	fmt.Println("  Replica: :6380")
+	fmt.Printf("  Master: %s\n", masterAddr)
+	fmt.Printf("  Replica: %s\n", replicaAddr)
 	fmt.Println("  Databases: 0, 1, 2 (filtering enabled)")
-	fmt.Println("  Replica Auth: enabled")
+	if replicaAuth != "" {
+		fmt.Println("  Replica Auth: enabled")
+	} else {
+		fmt.Println("  Replica Auth: disabled")
+	}
 	fmt.Println()
 
 	// Register callback for sync completion
@@ -61,11 +72,16 @@ func main() {
 		log.Println("⚠️  Sync did not complete (this is expected if Redis is not running)")
 		log.Println("   To test this example:")
 		log.Println("   1. Start Redis server: redis-server")
-		log.Println("   2. Add data to different databases:")
+		log.Println("   2. Set environment variables (optional):")
+		log.Println("      export REDIS_MASTER_ADDR=localhost:6379")
+		log.Println("      export REDIS_MASTER_AUTH=your_master_password")
+		log.Println("      export REDIS_REPLICA_ADDR=:6380") 
+		log.Println("      export REDIS_REPLICA_AUTH=your_replica_password")
+		log.Println("   3. Add data to different databases:")
 		log.Println("      redis-cli SELECT 0 && redis-cli SET key1 value1")
 		log.Println("      redis-cli SELECT 1 && redis-cli SET key2 value2") 
 		log.Println("      redis-cli SELECT 3 && redis-cli SET key3 value3  # This won't be replicated")
-		log.Println("   3. Run this example again")
+		log.Println("   4. Run this example again")
 		return
 	}
 
@@ -118,4 +134,12 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// getEnvOrDefault returns the environment variable value or a default value if not set
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
