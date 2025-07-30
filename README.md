@@ -1,6 +1,6 @@
 # Redis In-Memory Replica
 
-[![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue.svg)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/go-%3E%3D1.24.5-blue.svg)](https://golang.org/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/raniellyferreira/redis-inmemory-replica.svg)](https://pkg.go.dev/github.com/raniellyferreira/redis-inmemory-replica)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -237,7 +237,7 @@ Redis Master → RESP Protocol → RDB Parser → Storage Layer → Application
 ## Compatibility
 
 - **Redis Versions**: 5.0+ replication protocol
-- **Go Versions**: 1.21+
+- **Go Versions**: 1.24.5+
 - **Redis Clients**: Compatible with `github.com/redis/go-redis` and others
 - **Platforms**: Linux, macOS, Windows
 

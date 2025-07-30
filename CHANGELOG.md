@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Command replication
 
 ### Dependencies
-- Go 1.21 or higher
+- Go 1.24.5 or higher
 - No external dependencies (standard library only)
 
 ## [Unreleased]
