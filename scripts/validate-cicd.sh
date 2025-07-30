@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Complete CI/CD Pipeline Validation Script
-# This script runs all CI/CD steps locally to validate the pipeline
+# Enhanced CI/CD Pipeline Validation Script
+# This script runs all CI/CD steps locally with comprehensive validation
 
 set -e
 
-echo "🚀 Redis In-Memory Replica CI/CD Pipeline Validation"
-echo "===================================================="
+echo "🚀 Redis In-Memory Replica Enhanced CI/CD Pipeline Validation"
+echo "=============================================================="
 echo
 
 # Colors for output
@@ -14,6 +14,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
@@ -27,6 +29,64 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}❌${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ️${NC} $1"
+}
+
+print_section() {
+    echo
+    echo -e "${PURPLE}$1${NC}"
+    echo -e "${PURPLE}$(echo "$1" | sed 's/./=/g')${NC}"
+}
+
+print_subsection() {
+    echo -e "${CYAN}$1${NC}"
+    echo -e "${CYAN}$(echo "$1" | sed 's/./-/g')${NC}"
+}
+
+# Pipeline validation counters
+validation_passed=0
+validation_warnings=0
+validation_failures=0
+
+# Function to handle step results
+handle_step_result() {
+    local step_name="$1"
+    local exit_code=$2
+    
+    if [ $exit_code -eq 0 ]; then
+        print_status "$step_name passed"
+        validation_passed=$((validation_passed + 1))
+        return 0
+    else
+        print_error "$step_name failed with exit code $exit_code"
+        validation_failures=$((validation_failures + 1))
+        return $exit_code
+    fi
+}
+
+# Function to run step with timeout and error handling
+run_step_with_timeout() {
+    local step_name="$1"
+    local timeout_duration="$2"
+    local command="$3"
+    
+    print_info "Running $step_name (timeout: ${timeout_duration}s)..."
+    
+    if timeout "$timeout_duration" bash -c "$command"; then
+        handle_step_result "$step_name" 0
+    else
+        local exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+            print_error "$step_name timed out after ${timeout_duration}s"
+            validation_failures=$((validation_failures + 1))
+        else
+            handle_step_result "$step_name" $exit_code
+        fi
+        return $exit_code
+    fi
 }
 
 print_info() {

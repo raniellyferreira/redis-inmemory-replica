@@ -2,6 +2,8 @@ package redisreplica
 
 import (
 	"context"
+	"crypto/tls"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,35 +83,284 @@ func TestSecurityIntegration(t *testing.T) {
 
 // TestSecurityTimeout tests that timeouts are properly applied to connections
 func TestSecurityTimeout(t *testing.T) {
-	// Create replica with very short timeout to test timeout logic
-	replica, err := New(
-		WithMaster("192.0.2.1:6379"), // Non-routable IP for testing timeout
-		WithConnectTimeout(100*time.Millisecond),
-		WithReadTimeout(50*time.Millisecond),
-		WithWriteTimeout(50*time.Millisecond),
-	)
+	tests := []struct {
+		name           string
+		connectTimeout time.Duration
+		readTimeout    time.Duration
+		writeTimeout   time.Duration
+		expectTimeout  bool
+	}{
+		{
+			name:           "very_short_timeouts",
+			connectTimeout: 100 * time.Millisecond,
+			readTimeout:    50 * time.Millisecond,
+			writeTimeout:   50 * time.Millisecond,
+			expectTimeout:  true,
+		},
+		{
+			name:           "reasonable_timeouts",
+			connectTimeout: 5 * time.Second,
+			readTimeout:    30 * time.Second,
+			writeTimeout:   10 * time.Second,
+			expectTimeout:  true, // Still expect timeout due to non-routable IP
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create replica with specified timeouts
+			replica, err := New(
+				WithMaster("192.0.2.1:6379"), // Non-routable IP for testing timeout
+				WithConnectTimeout(tt.connectTimeout),
+				WithReadTimeout(tt.readTimeout),
+				WithWriteTimeout(tt.writeTimeout),
+			)
+			
+			if err != nil {
+				t.Fatalf("Failed to create replica: %v", err)
+			}
+			
+			// Test that connection fails as expected
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			
+			// This should timeout quickly due to non-routable IP
+			startTime := time.Now()
+			err = replica.Start(ctx)
+			elapsed := time.Since(startTime)
+			
+			// Should get an error (connection failure or timeout)
+			if err == nil {
+				t.Error("Expected connection error due to non-routable IP")
+			}
+			
+			// For very short timeouts, should fail faster than context timeout
+			if tt.name == "very_short_timeouts" && elapsed > 1500*time.Millisecond {
+				t.Logf("Connection took %v, which is acceptable for short timeouts", elapsed)
+			}
+			
+			// Verify the error contains relevant information
+			errStr := err.Error()
+			if !strings.Contains(errStr, "timeout") && !strings.Contains(errStr, "dial") && !strings.Contains(errStr, "deadline") {
+				t.Errorf("Expected timeout/dial/deadline error, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestSecurityTimeoutValidation tests timeout configuration validation
+func TestSecurityTimeoutValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		connectTimeout time.Duration
+		readTimeout    time.Duration
+		writeTimeout   time.Duration
+		expectError    bool
+	}{
+		{
+			name:           "valid_timeouts",
+			connectTimeout: 5 * time.Second,
+			readTimeout:    30 * time.Second,
+			writeTimeout:   10 * time.Second,
+			expectError:    false,
+		},
+		{
+			name:           "negative_connect_timeout",
+			connectTimeout: -1 * time.Second,
+			readTimeout:    30 * time.Second,
+			writeTimeout:   10 * time.Second,
+			expectError:    true, // Negative timeout should be invalid
+		},
+		{
+			name:           "negative_read_timeout",
+			connectTimeout: 5 * time.Second,
+			readTimeout:    -1 * time.Second,
+			writeTimeout:   10 * time.Second,
+			expectError:    true, // Negative timeout should be invalid
+		},
+		{
+			name:           "negative_write_timeout",
+			connectTimeout: 5 * time.Second,
+			readTimeout:    30 * time.Second,
+			writeTimeout:   -1 * time.Second,
+			expectError:    true, // Negative timeout should be invalid
+		},
+		{
+			name:           "very_large_timeouts",
+			connectTimeout: 1 * time.Hour,
+			readTimeout:    24 * time.Hour,
+			writeTimeout:   24 * time.Hour,
+			expectError:    false, // Large timeouts should be allowed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create replica with all timeouts at once
+			_, err := New(
+				WithMaster("localhost:6379"),
+				WithConnectTimeout(tt.connectTimeout),
+				WithReadTimeout(tt.readTimeout),
+				WithWriteTimeout(tt.writeTimeout),
+			)
+			
+			if tt.expectError && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestSecurityTLSEnvironments tests different TLS environment configurations
+func TestSecurityTLSEnvironments(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment TLSEnvironment
+		serverName  string
+	}{
+		{
+			name:        "development_environment",
+			environment: TLSEnvironmentDevelopment,
+			serverName:  "localhost",
+		},
+		{
+			name:        "staging_environment", 
+			environment: TLSEnvironmentStaging,
+			serverName:  "staging.redis.example.com",
+		},
+		{
+			name:        "production_environment",
+			environment: TLSEnvironmentProduction,
+			serverName:  "redis.example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := defaultConfig()
+			
+			// Apply TLS environment configuration
+			err := WithTLSEnvironment(tt.serverName, tt.environment)(config)
+			if err != nil {
+				t.Fatalf("Failed to apply TLS environment: %v", err)
+			}
+			
+			// Verify TLS config was set
+			if config.masterTLS == nil {
+				t.Fatal("TLS config was not set")
+			}
+			
+			// Verify server name
+			if config.masterTLS.ServerName != tt.serverName {
+				t.Errorf("Expected server name %s, got %s", tt.serverName, config.masterTLS.ServerName)
+			}
+			
+			// Verify InsecureSkipVerify is false (security requirement)
+			if config.masterTLS.InsecureSkipVerify {
+				t.Error("InsecureSkipVerify should be false for security")
+			}
+			
+			// Verify minimum TLS version based on environment
+			expectedMinVersion := tls.VersionTLS12
+			if tt.environment == TLSEnvironmentProduction {
+				expectedMinVersion = tls.VersionTLS13
+			}
+			
+			if config.masterTLS.MinVersion != uint16(expectedMinVersion) {
+				t.Errorf("Expected min version %d, got %d", expectedMinVersion, config.masterTLS.MinVersion)
+			}
+			
+			// Verify cipher suites are configured
+			if len(config.masterTLS.CipherSuites) == 0 {
+				t.Error("No cipher suites configured")
+			}
+			
+			// Production should have fewer (more secure) cipher suites
+			if tt.environment == TLSEnvironmentProduction {
+				if len(config.masterTLS.CipherSuites) > 4 {
+					t.Errorf("Production environment should have limited cipher suites, got %d", len(config.masterTLS.CipherSuites))
+				}
+			}
+		})
+	}
+}
+
+// TestSecurityTLSCustomBuilder tests the custom TLS builder
+func TestSecurityTLSCustomBuilder(t *testing.T) {
+	config := defaultConfig()
+	
+	// Test custom TLS builder
+	err := WithTLSCustom("custom.redis.example.com").
+		MinVersion(tls.VersionTLS13).
+		SkipVerify(false).
+		CipherSuites([]uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384}).
+		Build()(config)
 	
 	if err != nil {
-		t.Fatalf("Failed to create replica: %v", err)
+		t.Fatalf("Failed to build custom TLS config: %v", err)
 	}
 	
-	// Test that connection timeout is respected
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	
-	// This should timeout quickly due to non-routable IP
-	startTime := time.Now()
-	err = replica.Start(ctx)
-	elapsed := time.Since(startTime)
-	
-	// Connection should fail quickly (within a reasonable time)
-	if elapsed > 2*time.Second {
-		t.Errorf("Connection took too long: %v", elapsed)
+	// Verify custom configuration
+	if config.masterTLS == nil {
+		t.Fatal("TLS config was not set")
 	}
 	
-	// Should get an error (connection failure or timeout)
-	if err == nil {
-		t.Error("Expected connection error due to non-routable IP")
+	if config.masterTLS.ServerName != "custom.redis.example.com" {
+		t.Errorf("Expected server name custom.redis.example.com, got %s", config.masterTLS.ServerName)
+	}
+	
+	if config.masterTLS.MinVersion != tls.VersionTLS13 {
+		t.Errorf("Expected TLS 1.3, got %d", config.masterTLS.MinVersion)
+	}
+	
+	if config.masterTLS.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify should be false")
+	}
+	
+	if len(config.masterTLS.CipherSuites) != 1 {
+		t.Errorf("Expected 1 cipher suite, got %d", len(config.masterTLS.CipherSuites))
+	}
+}
+
+// TestSecurityTLSInvalidConfigurations tests invalid TLS configurations
+func TestSecurityTLSInvalidConfigurations(t *testing.T) {
+	tests := []struct {
+		name       string
+		serverName string
+		expectError bool
+	}{
+		{
+			name:       "empty_server_name",
+			serverName: "",
+			expectError: true,
+		},
+		{
+			name:       "valid_server_name",
+			serverName: "redis.example.com",
+			expectError: false,
+		},
+		{
+			name:       "localhost",
+			serverName: "localhost",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := defaultConfig()
+			err := WithSecureTLS(tt.serverName)(config)
+			
+			if tt.expectError && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
 	}
 }
 

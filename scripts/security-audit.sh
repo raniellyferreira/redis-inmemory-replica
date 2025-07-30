@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# Redis In-Memory Replica Security Audit Script
+# Redis In-Memory Replica Enhanced Security Audit Script
 # This script performs a comprehensive security audit of the codebase
+# with enhanced checks for production readiness
 
 set -e
 
-echo "🔒 Redis In-Memory Replica Security Audit"
-echo "=========================================="
+echo "🔒 Redis In-Memory Replica Enhanced Security Audit"
+echo "=================================================="
 echo
 
 # Colors for output
@@ -14,6 +15,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
@@ -27,6 +30,38 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}❌${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ️${NC} $1"
+}
+
+print_section() {
+    echo -e "${PURPLE}$1${NC}"
+    echo -e "${PURPLE}$(echo "$1" | sed 's/./=/g')${NC}"
+}
+
+print_subsection() {
+    echo -e "${CYAN}$1${NC}"
+    echo -e "${CYAN}$(echo "$1" | sed 's/./-/g')${NC}"
+}
+
+# Security audit counters
+security_issues=0
+security_warnings=0
+security_passed=0
+
+# Function to increment counters
+increment_issue() {
+    security_issues=$((security_issues + 1))
+}
+
+increment_warning() {
+    security_warnings=$((security_warnings + 1))
+}
+
+increment_passed() {
+    security_passed=$((security_passed + 1))
 }
 
 print_info() {

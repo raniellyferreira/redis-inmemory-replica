@@ -208,6 +208,18 @@ func WithTLS(tlsConfig *tls.Config) Option {
 	}
 }
 
+// TLSEnvironment represents predefined TLS configuration environments
+type TLSEnvironment int
+
+const (
+	// TLSEnvironmentDevelopment provides relaxed TLS settings for development
+	TLSEnvironmentDevelopment TLSEnvironment = iota
+	// TLSEnvironmentStaging provides balanced TLS settings for staging
+	TLSEnvironmentStaging
+	// TLSEnvironmentProduction provides maximum security TLS settings for production
+	TLSEnvironmentProduction
+)
+
 // WithSecureTLS configures TLS with secure defaults for master connection
 //
 // This function provides secure TLS defaults and should be used in production
@@ -216,22 +228,147 @@ func WithTLS(tlsConfig *tls.Config) Option {
 // Example:
 //   WithSecureTLS("redis.example.com")
 func WithSecureTLS(serverName string) Option {
+	return WithTLSEnvironment(serverName, TLSEnvironmentProduction)
+}
+
+// WithTLSEnvironment configures TLS with predefined settings for specific environments
+//
+// This function allows easy configuration switching between development, staging,
+// and production environments with appropriate security settings for each.
+//
+// Examples:
+//   WithTLSEnvironment("redis.example.com", TLSEnvironmentProduction)  // Maximum security
+//   WithTLSEnvironment("redis.staging.com", TLSEnvironmentStaging)     // Balanced security
+//   WithTLSEnvironment("localhost", TLSEnvironmentDevelopment)         // Development friendly
+func WithTLSEnvironment(serverName string, env TLSEnvironment) Option {
 	return func(c *config) error {
 		if serverName == "" {
 			return ErrInvalidConfig
 		}
+
+		var tlsConfig *tls.Config
+
+		switch env {
+		case TLSEnvironmentDevelopment:
+			// Development: Relaxed settings for easier development
+			tlsConfig = &tls.Config{
+				ServerName:         serverName,
+				InsecureSkipVerify: false, // Still verify certificates for security
+				MinVersion:         tls.VersionTLS12,
+				// Use broader cipher suite support for compatibility
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+				},
+			}
+
+		case TLSEnvironmentStaging:
+			// Staging: Balanced settings for testing production-like security
+			tlsConfig = &tls.Config{
+				ServerName:         serverName,
+				InsecureSkipVerify: false,
+				MinVersion:         tls.VersionTLS12,
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				},
+			}
+
+		case TLSEnvironmentProduction:
+			// Production: Maximum security settings
+			tlsConfig = &tls.Config{
+				ServerName:         serverName,
+				InsecureSkipVerify: false,
+				MinVersion:         tls.VersionTLS13, // Require TLS 1.3 for production
+				CipherSuites: []uint16{
+					// Only the most secure cipher suites
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				},
+			}
+
+		default:
+			return ErrInvalidConfig
+		}
+
+		c.masterTLS = tlsConfig
+		return nil
+	}
+}
+
+// WithTLSCustom configures TLS with custom settings and easy modification
+//
+// This function provides a builder pattern for custom TLS configuration
+// with sensible defaults that can be easily modified.
+//
+// Example:
+//   WithTLSCustom("redis.example.com").
+//     MinVersion(tls.VersionTLS13).
+//     SkipVerify(false).
+//     CipherSuites([]uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384})
+func WithTLSCustom(serverName string) *TLSBuilder {
+	return &TLSBuilder{
+		serverName:         serverName,
+		insecureSkipVerify: false,
+		minVersion:         tls.VersionTLS12,
+		cipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		},
+	}
+}
+
+// TLSBuilder provides a fluent interface for building TLS configurations
+type TLSBuilder struct {
+	serverName         string
+	insecureSkipVerify bool
+	minVersion         uint16
+	cipherSuites       []uint16
+}
+
+// MinVersion sets the minimum TLS version
+func (b *TLSBuilder) MinVersion(version uint16) *TLSBuilder {
+	b.minVersion = version
+	return b
+}
+
+// SkipVerify sets whether to skip certificate verification (use with caution)
+func (b *TLSBuilder) SkipVerify(skip bool) *TLSBuilder {
+	b.insecureSkipVerify = skip
+	return b
+}
+
+// CipherSuites sets the allowed cipher suites
+func (b *TLSBuilder) CipherSuites(suites []uint16) *TLSBuilder {
+	b.cipherSuites = suites
+	return b
+}
+
+// Build creates the Option with the configured TLS settings
+func (b *TLSBuilder) Build() Option {
+	return func(c *config) error {
+		if b.serverName == "" {
+			return ErrInvalidConfig
+		}
 		c.masterTLS = &tls.Config{
-			ServerName:         serverName,
-			InsecureSkipVerify: false,
-			MinVersion:         tls.VersionTLS12,
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			},
+			ServerName:         b.serverName,
+			InsecureSkipVerify: b.insecureSkipVerify,
+			MinVersion:         b.minVersion,
+			CipherSuites:       b.cipherSuites,
 		}
 		return nil
 	}

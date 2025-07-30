@@ -32,9 +32,9 @@ func TestSecureTLSConfiguration(t *testing.T) {
 		t.Error("InsecureSkipVerify should be false for secure TLS")
 	}
 	
-	// Check MinVersion is TLS 1.2
-	if cfg.masterTLS.MinVersion != tls.VersionTLS12 {
-		t.Errorf("Expected MinVersion to be TLS 1.2, got %d", cfg.masterTLS.MinVersion)
+	// Check MinVersion is TLS 1.3 (production environment default)
+	if cfg.masterTLS.MinVersion != tls.VersionTLS13 {
+		t.Errorf("Expected MinVersion to be TLS 1.3, got %d", cfg.masterTLS.MinVersion)
 	}
 	
 	// Check that cipher suites are configured
