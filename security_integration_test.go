@@ -130,7 +130,6 @@ func TestSecurityTLSConfiguration(t *testing.T) {
 	securityChecks := map[string]bool{
 		"InsecureSkipVerify is false":        !tls.InsecureSkipVerify,
 		"MinVersion is TLS 1.2":             tls.MinVersion >= 0x0303, // TLS 1.2
-		"PreferServerCipherSuites is true":  tls.PreferServerCipherSuites,
 		"ServerName is set":                 tls.ServerName != "",
 		"CipherSuites are configured":       len(tls.CipherSuites) > 0,
 	}

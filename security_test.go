@@ -41,11 +41,6 @@ func TestSecureTLSConfiguration(t *testing.T) {
 	if len(cfg.masterTLS.CipherSuites) == 0 {
 		t.Error("Cipher suites should be configured")
 	}
-	
-	// Check PreferServerCipherSuites is true
-	if !cfg.masterTLS.PreferServerCipherSuites {
-		t.Error("PreferServerCipherSuites should be true")
-	}
 }
 
 // TestSecureTLSConfigurationInvalidServerName tests WithSecureTLS with invalid input

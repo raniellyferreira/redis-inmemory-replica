@@ -51,11 +51,6 @@ install_tools() {
         go install golang.org/x/vuln/cmd/govulncheck@latest
     fi
     
-    if ! check_tool gosec; then
-        print_info "Installing gosec..."
-        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-    fi
-    
     if ! check_tool staticcheck; then
         print_info "Installing staticcheck..."
         go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -95,16 +90,8 @@ echo
 echo "2. 🔍 Static Security Analysis"
 echo "   ==========================="
 
-if check_tool gosec; then
-    print_info "Running gosec security scanner..."
-    if gosec -quiet ./...; then
-        print_status "No security issues found by gosec"
-    else
-        print_warning "Security issues detected by gosec"
-    fi
-else
-    print_warning "gosec not available"
-fi
+print_info "Skipping gosec due to Go version compatibility issues"
+print_info "Using staticcheck for static analysis instead"
 echo
 
 # 3. Code Quality Analysis

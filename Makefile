@@ -54,11 +54,11 @@ coverage: test ## Generate test coverage report
 
 lint: install-tools ## Run linter
 	@echo "Running linter..."
-	golangci-lint run
+	$(shell go env GOPATH)/bin/golangci-lint run
 
 lint-fix: install-tools ## Run linter with auto-fix
 	@echo "Running linter with auto-fix..."
-	golangci-lint run --fix
+	$(shell go env GOPATH)/bin/golangci-lint run --fix
 
 clean: ## Clean build artifacts
 	@echo "Cleaning..."
@@ -154,16 +154,15 @@ security-audit: ## Run comprehensive security audit
 security-install: ## Install security tools
 	@echo "Installing security tools..."
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
-	@go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
 	@go install honnef.co/go/tools/cmd/staticcheck@latest
 
-security-scan: ## Run vulnerability scan
+security-scan: ## Run vulnerability scan  
 	@echo "Running vulnerability scan..."
-	@govulncheck ./... || echo "Vulnerability scan completed with warnings"
+	@$(shell go env GOPATH)/bin/govulncheck ./... || echo "Vulnerability scan completed with warnings"
 
 security-static: ## Run static security analysis
 	@echo "Running static security analysis..."
-	@gosec -quiet ./... || echo "Static analysis completed with warnings"
+	@$(shell go env GOPATH)/bin/staticcheck ./... || echo "Static analysis completed with warnings"
 
 security-deps: ## Check dependencies for vulnerabilities
 	@echo "Checking dependencies..."

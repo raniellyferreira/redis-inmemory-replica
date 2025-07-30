@@ -221,10 +221,9 @@ func WithSecureTLS(serverName string) Option {
 			return ErrInvalidConfig
 		}
 		c.masterTLS = &tls.Config{
-			ServerName:               serverName,
-			InsecureSkipVerify:       false,
-			MinVersion:               tls.VersionTLS12,
-			PreferServerCipherSuites: true,
+			ServerName:         serverName,
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,

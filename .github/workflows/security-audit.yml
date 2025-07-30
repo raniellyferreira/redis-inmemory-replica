@@ -45,29 +45,12 @@ jobs:
       run: govulncheck ./...
       continue-on-error: false
       
-    - name: Install gosec
-      run: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+    - name: Install staticcheck for static analysis
+      run: go install honnef.co/go/tools/cmd/staticcheck@latest
       
-    - name: Run gosec security scan
-      run: gosec -fmt sarif -out results.sarif ./...
+    - name: Run staticcheck security analysis
+      run: staticcheck ./...
       continue-on-error: true
-      
-    - name: Upload SARIF file
-      if: always()
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: results.sarif
-        
-    - name: Run gosec security scan (console output)
-      run: gosec -fmt json -out gosec-report.json ./...
-      continue-on-error: true
-      
-    - name: Upload gosec report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: gosec-security-report
-        path: gosec-report.json
         
   dependency-scan:
     runs-on: ubuntu-latest
