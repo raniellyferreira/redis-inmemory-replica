@@ -72,6 +72,8 @@ print_info() {
 check_tool() {
     if command -v $1 &> /dev/null; then
         return 0
+    elif [ -f "/home/runner/go/bin/$1" ]; then
+        return 0
     else
         return 1
     fi
@@ -111,13 +113,16 @@ echo "   =========================="
 
 if check_tool govulncheck; then
     print_info "Running govulncheck..."
-    if govulncheck ./...; then
+    if /home/runner/go/bin/govulncheck ./... || govulncheck ./...; then
         print_status "No known vulnerabilities found"
+        increment_passed
     else
         print_warning "Vulnerabilities detected or network error"
+        increment_warning
     fi
 else
     print_warning "govulncheck not available"
+    increment_warning
 fi
 echo
 
@@ -136,19 +141,24 @@ echo "   ========================"
 print_info "Running go vet..."
 if go vet ./...; then
     print_status "go vet passed"
+    increment_passed
 else
     print_error "go vet found issues"
+    increment_issue
 fi
 
 if check_tool staticcheck; then
     print_info "Running staticcheck..."
-    if staticcheck ./...; then
+    if /home/runner/go/bin/staticcheck ./... || staticcheck ./...; then
         print_status "staticcheck passed"
+        increment_passed
     else
         print_warning "staticcheck found issues"
+        increment_warning
     fi
 else
     print_warning "staticcheck not available"
+    increment_warning
 fi
 echo
 
