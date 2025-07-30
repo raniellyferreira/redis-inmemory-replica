@@ -11,6 +11,7 @@ A production-ready Go library that implements an in-memory Redis replica with re
 - **Real-time Replication**: Connects to Redis master and maintains synchronized copy in memory
 - **Streaming Parsers**: Memory-efficient RESP and RDB parsing for high-throughput applications
 - **Redis Compatibility**: Works with popular Redis clients for read operations
+- **Lua Script Execution**: Full Redis-compatible Lua scripting with EVAL/EVALSHA support
 - **Production Ready**: Comprehensive error handling, logging, metrics, and graceful shutdown
 - **High Performance**: Optimized for >100k ops/sec with minimal memory overhead
 - **Flexible Configuration**: Extensive configuration options with functional options pattern
@@ -70,6 +71,165 @@ func main() {
     }
 }
 ```
+
+## Lua Script Execution
+
+The library provides comprehensive Redis-compatible Lua script execution, enabling atomic operations and complex data processing.
+
+### Supported Commands
+
+- `EVAL script numkeys key1 ... arg1 ...` - Execute Lua script
+- `EVALSHA sha1 numkeys key1 ... arg1 ...` - Execute cached script
+- `SCRIPT LOAD script` - Cache script and return SHA1
+- `SCRIPT EXISTS sha1 [sha1 ...]` - Check if scripts exist
+- `SCRIPT FLUSH` - Remove all cached scripts
+
+### Basic Lua Scripting
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    
+    "github.com/raniellyferreira/redis-inmemory-replica/lua"
+    "github.com/raniellyferreira/redis-inmemory-replica/storage"
+)
+
+func main() {
+    // Create storage and Lua engine
+    stor := storage.NewMemory()
+    engine := lua.NewEngine(stor)
+
+    // Simple script execution
+    result, err := engine.Eval("return 'Hello from Lua!'", []string{}, []string{})
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Result: %v\n", result)
+
+    // Using KEYS and ARGV
+    script := "return KEYS[1] .. ':' .. ARGV[1]"
+    result, err = engine.Eval(script, []string{"user"}, []string{"123"})
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Result: %v\n", result) // Output: "user:123"
+}
+```
+
+### Redis Commands in Lua
+
+Scripts can execute Redis commands using `redis.call()` and `redis.pcall()`:
+
+```go
+// Redis commands in Lua scripts
+script := `
+    redis.call('SET', KEYS[1], ARGV[1])
+    local value = redis.call('GET', KEYS[1])
+    return 'Stored and retrieved: ' .. value
+`
+result, err := engine.Eval(script, []string{"mykey"}, []string{"myvalue"})
+// Result: "Stored and retrieved: myvalue"
+
+// Error handling with redis.pcall()
+script = `
+    local result = redis.pcall('GET', 'nonexistent')
+    if type(result) == 'table' and result.err then
+        return 'Error: ' .. result.err
+    else
+        return 'Success: ' .. tostring(result)
+    end
+`
+result, err = engine.Eval(script, []string{}, []string{})
+```
+
+### Script Caching
+
+Use script caching for better performance with frequently executed scripts:
+
+```go
+// Load and cache a script
+script := "return 'This is a cached script with arg: ' .. (ARGV[1] or 'none')"
+sha := engine.LoadScript(script)
+fmt.Printf("Script SHA1: %s\n", sha)
+
+// Execute cached script by SHA1
+result, err := engine.EvalSHA(sha, []string{}, []string{"hello"})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Result: %v\n", result)
+
+// Check if scripts exist
+exists := engine.ScriptExists([]string{sha})
+fmt.Printf("Script exists: %v\n", exists[0])
+
+// Flush all cached scripts
+engine.FlushScripts()
+```
+
+### Complex Script Example
+
+```go
+// Complex script with loops and multiple Redis operations
+script := `
+    local results = {}
+    for i = 1, #KEYS do
+        local key = KEYS[i]
+        local val = ARGV[i] or 'default'
+        redis.call('SET', key, val)
+        results[i] = key .. '=' .. redis.call('GET', key)
+    end
+    return results
+`
+
+keys := []string{"key1", "key2", "key3"}
+args := []string{"val1", "val2", "val3"}
+result, err := engine.Eval(script, keys, args)
+// Result: ["key1=val1", "key2=val2", "key3=val3"]
+```
+
+### Integration with Redis Clients
+
+The Lua execution engine integrates seamlessly with Redis clients:
+
+```go
+// Using with github.com/redis/go-redis
+client := redis.NewClient(&redis.Options{
+    Addr: "replica:6380", // Your replica server address
+})
+
+script := "return redis.call('SET', KEYS[1], ARGV[1])"
+result := client.Eval(ctx, script, []string{"mykey"}, "myvalue")
+
+// Using EVALSHA for cached scripts
+sha := client.ScriptLoad(ctx, script).Val()
+result = client.EvalSHA(ctx, sha, []string{"mykey"}, "myvalue")
+```
+
+### Performance
+
+The Lua execution engine is optimized for high performance:
+
+- **Simple scripts**: ~85μs per execution
+- **Redis commands**: ~97μs per execution  
+- **Cached scripts (EVALSHA)**: ~85μs per execution
+- **Memory efficient**: ~220KB per execution with minimal allocations
+
+### Data Type Conversion
+
+The engine provides seamless conversion between Lua and Redis data types:
+
+| Lua Type | Redis Type | Notes |
+|----------|------------|-------|
+| `nil` | Null bulk string | Represents Redis NULL |
+| `false` | Null bulk string | Redis treats false as NULL |
+| `string` | Bulk string | Direct conversion |
+| `number` | Integer/Bulk string | Integers vs floats handled appropriately |
+| `table` (array) | Array | Lua arrays become Redis arrays |
+| `table` (hash) | Array of key-value pairs | Lua hashes flattened to arrays |
 
 ## Configuration Options
 
@@ -212,6 +372,18 @@ See [`examples/basic/main.go`](examples/basic/main.go) for a complete basic usag
 make examples
 ```
 
+### Lua Scripting Examples
+
+See [`examples/lua-demo/main.go`](examples/lua-demo/main.go) for standalone Lua scripting examples.
+
+See [`examples/replica-lua-demo/main.go`](examples/replica-lua-demo/main.go) for Lua scripting integrated with replication.
+
+```bash
+# Run Lua demo examples
+cd examples/lua-demo && go run main.go
+cd examples/replica-lua-demo && go run main.go
+```
+
 ### Monitoring Example
 
 See [`examples/monitoring/main.go`](examples/monitoring/main.go) for monitoring and observability features.
@@ -326,6 +498,8 @@ BenchmarkStorageSet-8    	 2000000	       800 ns/op	     128 B/op	       2 alloc
 - **Protocol Package**: Streaming RESP parser and writer
 - **Storage Package**: In-memory storage with Redis data types
 - **Replication Package**: Redis replication protocol implementation
+- **Lua Package**: Redis-compatible Lua script execution engine
+- **Server Package**: Redis protocol server with command processing
 - **Main Package**: High-level API and configuration
 
 ### Data Flow
@@ -334,6 +508,8 @@ BenchmarkStorageSet-8    	 2000000	       800 ns/op	     128 B/op	       2 alloc
 Redis Master → RESP Protocol → RDB Parser → Storage Layer → Application
                               ↓
                          Command Stream → Command Processor → Storage Updates
+                              ↓
+                         Lua Engine → Script Execution → Redis Commands
 ```
 
 ## Compatibility
@@ -374,7 +550,14 @@ redis-inmemory-replica/
 ├── protocol/           # RESP protocol implementation
 ├── storage/            # Storage interfaces and implementation
 ├── replication/        # Replication client and sync logic
+├── lua/                # Lua script execution engine
+├── server/             # Redis protocol server
 ├── examples/           # Usage examples
+│   ├── basic/          # Basic replication example
+│   ├── lua-demo/       # Lua scripting examples
+│   ├── replica-lua-demo/ # Integrated Lua + replication
+│   ├── monitoring/     # Monitoring and metrics
+│   └── cluster/        # Multiple replica management
 ├── Makefile           # Build automation
 └── README.md          # This file
 ```

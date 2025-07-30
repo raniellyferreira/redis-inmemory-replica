@@ -14,6 +14,26 @@ const (
 	ValueTypeStream
 )
 
+// String returns the Redis-compatible type name
+func (vt ValueType) String() string {
+	switch vt {
+	case ValueTypeString:
+		return "string"
+	case ValueTypeList:
+		return "list"
+	case ValueTypeSet:
+		return "set"
+	case ValueTypeZSet:
+		return "zset"
+	case ValueTypeHash:
+		return "hash"
+	case ValueTypeStream:
+		return "stream"
+	default:
+		return "none"
+	}
+}
+
 // Value represents a stored value with metadata
 type Value struct {
 	Type     ValueType
