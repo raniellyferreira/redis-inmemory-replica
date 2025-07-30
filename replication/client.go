@@ -51,6 +51,9 @@ type Client struct {
 	logger         Logger
 	metrics        MetricsCollector
 	syncTimeout    time.Duration
+	connectTimeout time.Duration
+	readTimeout    time.Duration
+	writeTimeout   time.Duration
 	commandFilters map[string]struct{}
 	databases      map[int]struct{} // Which databases to replicate (empty = all)
 }
@@ -102,6 +105,9 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		doneChan:       make(chan struct{}),
 		stats:          &ReplicationStats{MasterAddr: masterAddr},
 		syncTimeout:    30 * time.Second,
+		connectTimeout: 5 * time.Second,
+		readTimeout:    30 * time.Second,
+		writeTimeout:   10 * time.Second,
 		commandFilters: make(map[string]struct{}),
 		databases:      make(map[int]struct{}), // empty = replicate all
 		logger:         &defaultLogger{},
@@ -131,6 +137,21 @@ func (c *Client) SetMetrics(metrics MetricsCollector) {
 // SetSyncTimeout sets the synchronization timeout
 func (c *Client) SetSyncTimeout(timeout time.Duration) {
 	c.syncTimeout = timeout
+}
+
+// SetConnectTimeout sets the connection timeout
+func (c *Client) SetConnectTimeout(timeout time.Duration) {
+	c.connectTimeout = timeout
+}
+
+// SetReadTimeout sets the read timeout for network operations
+func (c *Client) SetReadTimeout(timeout time.Duration) {
+	c.readTimeout = timeout
+}
+
+// SetWriteTimeout sets the write timeout for network operations
+func (c *Client) SetWriteTimeout(timeout time.Duration) {
+	c.writeTimeout = timeout
 }
 
 // SetCommandFilters sets command filters
@@ -272,14 +293,27 @@ func (c *Client) connect() error {
 	var conn net.Conn
 	var err error
 	
+	// Create dialer with timeout
+	dialer := &net.Dialer{
+		Timeout: c.connectTimeout,
+	}
+	
 	if c.tlsConfig != nil {
-		conn, err = tls.Dial("tcp", c.masterAddr, c.tlsConfig)
+		conn, err = tls.DialWithDialer(dialer, "tcp", c.masterAddr, c.tlsConfig)
 	} else {
-		conn, err = net.Dial("tcp", c.masterAddr)
+		conn, err = dialer.Dial("tcp", c.masterAddr)
 	}
 	
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
+	}
+	
+	// Set connection timeouts
+	if c.readTimeout > 0 {
+		conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+	}
+	if c.writeTimeout > 0 {
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 	}
 	
 	c.mu.Lock()

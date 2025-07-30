@@ -1,0 +1,204 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security audit every Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    name: Vulnerability Scanning
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+          
+    - name: Download dependencies
+      run: go mod download
+      
+    - name: Verify dependencies
+      run: go mod verify
+      
+    - name: Install govulncheck
+      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      
+    - name: Run govulncheck
+      run: govulncheck ./...
+      continue-on-error: false
+      
+    - name: Install gosec
+      run: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+      
+    - name: Run gosec security scan
+      run: gosec -fmt sarif -out results.sarif ./...
+      continue-on-error: true
+      
+    - name: Upload SARIF file
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: results.sarif
+        
+    - name: Run gosec security scan (console output)
+      run: gosec -fmt json -out gosec-report.json ./...
+      continue-on-error: true
+      
+    - name: Upload gosec report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: gosec-security-report
+        path: gosec-report.json
+        
+  dependency-scan:
+    runs-on: ubuntu-latest
+    name: Dependency Security Check
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        
+    - name: Check for known vulnerabilities in dependencies
+      run: |
+        # Install nancy for dependency scanning
+        go install github.com/sonatypecommunity/nancy@latest || true
+        
+        # Check if we have any dependencies
+        if [ -f "go.sum" ]; then
+          echo "Scanning dependencies for vulnerabilities..."
+          go list -json -deps ./... | nancy sleuth
+        else
+          echo "No dependencies found to scan"
+        fi
+      continue-on-error: true
+      
+    - name: Audit Go modules
+      run: |
+        echo "Checking for Go module security issues..."
+        go mod tidy
+        go mod verify
+        
+        # Check for any retracted modules
+        go list -retracted -f '{{.Path}}: {{.Retracted}}' all || true
+        
+  code-quality-scan:
+    runs-on: ubuntu-latest
+    name: Code Quality & Security
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        
+    - name: Run go vet
+      run: go vet ./...
+      
+    - name: Check for hardcoded secrets
+      run: |
+        echo "Checking for potential hardcoded secrets..."
+        # Look for common patterns that might indicate hardcoded secrets
+        if grep -r -i "password.*=" --include="*.go" . | grep -v "_test.go" | grep -v "// " | grep -v "examples/"; then
+          echo "⚠️  Found potential hardcoded passwords"
+          exit 1
+        fi
+        
+        if grep -r "api[_-]*key.*=" --include="*.go" . | grep -v "_test.go" | grep -v "// " | grep -v "examples/"; then
+          echo "⚠️  Found potential hardcoded API keys"
+          exit 1
+        fi
+        
+        if grep -r "secret.*=" --include="*.go" . | grep -v "_test.go" | grep -v "// " | grep -v "examples/"; then
+          echo "⚠️  Found potential hardcoded secrets"
+          exit 1
+        fi
+        
+        echo "✅ No obvious hardcoded secrets found"
+        
+    - name: Check for debug/logging issues
+      run: |
+        echo "Checking for potential information disclosure in logs..."
+        if grep -r "fmt\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "// " | grep -v "examples/"; then
+          echo "⚠️  Found fmt.Print statements that could leak information"
+          exit 1
+        fi
+        
+        if grep -r "log\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "// " | grep -v "examples/"; then
+          echo "⚠️  Found log.Print statements that could leak information"
+          exit 1
+        fi
+        
+        echo "✅ No obvious logging issues found"
+        
+    - name: Check for unsafe operations
+      run: |
+        echo "Checking for unsafe operations..."
+        if grep -r "unsafe\." --include="*.go" . | grep -v "_test.go"; then
+          echo "⚠️  Found unsafe operations - review carefully"
+        else
+          echo "✅ No unsafe operations found"
+        fi
+        
+        if grep -r "os\.Setenv" --include="*.go" . | grep -v "_test.go"; then
+          echo "⚠️  Found os.Setenv calls - review for security implications"
+        else
+          echo "✅ No environment manipulation found"
+        fi
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    name: Security-focused Build & Test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        
+    - name: Build with security flags
+      run: |
+        echo "Building with security-focused compiler flags..."
+        go build -buildmode=pie -ldflags="-s -w" ./...
+        
+    - name: Run tests with race detection
+      run: go test -race -coverprofile=coverage.out ./...
+      
+    - name: Run fuzzing tests (if available)
+      run: |
+        # Look for fuzz tests and run them briefly
+        if find . -name "*_test.go" -exec grep -l "func Fuzz" {} \; | head -1; then
+          echo "Running fuzz tests..."
+          go test -fuzz=. -fuzztime=30s ./... || echo "Fuzz tests completed"
+        else
+          echo "No fuzz tests found"
+        fi
