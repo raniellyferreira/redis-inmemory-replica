@@ -79,7 +79,7 @@ The library supports extensive configuration through functional options:
 replica, err := redisreplica.New(
     // Master connection
     redisreplica.WithMaster("redis.example.com:6379"),
-    redisreplica.WithMasterAuth("password"),
+    redisreplica.WithMasterAuth(os.Getenv("REDIS_PASSWORD")), // Use environment variable
     redisreplica.WithTLS(&tls.Config{...}),
     
     // Local server
@@ -129,16 +129,18 @@ replica, err := redisreplica.New(
 
 ### Authentication & Authorization
 
-Configure strong authentication:
+Configure strong authentication using environment variables:
 
 ```go
 replica, err := redisreplica.New(
     redisreplica.WithMaster("redis.example.com:6379"),
-    redisreplica.WithMasterAuth("strong-password-123"),
-    redisreplica.WithReplicaAuth("replica-password"), // For replica server
+    redisreplica.WithMasterAuth(os.Getenv("REDIS_MASTER_PASSWORD")), // Never hardcode
+    redisreplica.WithReplicaAuth(os.Getenv("REDIS_REPLICA_PASSWORD")), // For replica server
     redisreplica.WithReadOnly(true), // Enforce read-only mode
 )
 ```
+
+**Security Note**: Always use environment variables or secure configuration management for credentials. Never hardcode passwords in source code.
 
 ### Network Security
 
@@ -165,7 +167,7 @@ replica, err := redisreplica.New(
 
 ### Security Auditing
 
-Run security audits using the provided tools:
+The library includes comprehensive security scanning that filters out false positives:
 
 ```bash
 # Run comprehensive security audit
@@ -180,6 +182,12 @@ make security-scan
 # Run static security analysis
 make security-static
 ```
+
+**Enhanced Security Features:**
+- **Smart Secret Detection**: Distinguishes between actual hardcoded secrets and legitimate variable names
+- **Test File Exclusion**: Security scans automatically ignore test files and examples
+- **Safe Operation Marking**: Use `// safe: reason` comments for intentional unsafe operations
+- **CI/CD Integration**: Automated security checks in GitHub Actions prevent security issues
 
 ### Security Best Practices
 

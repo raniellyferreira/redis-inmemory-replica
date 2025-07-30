@@ -13,7 +13,7 @@ func TestSecurityIntegration(t *testing.T) {
 	// Test that security features work together without errors
 	replica, err := New(
 		WithMaster("localhost:6379"),
-		WithMasterAuth("test-password"),
+		WithMasterAuth("test-password"), // safe: testing only - dummy credential for unit tests
 		WithSecureTLS("localhost"), // Using localhost for test
 		WithConnectTimeout(5*time.Second),
 		WithReadTimeout(10*time.Second),
@@ -47,7 +47,7 @@ func TestSecurityIntegration(t *testing.T) {
 	}
 	
 	// Check authentication
-	if config.masterPassword != "test-password" {
+	if config.masterPassword != "test-password" { // safe: testing only - verifying test credential was set
 		t.Error("Master password should be configured")
 	}
 	

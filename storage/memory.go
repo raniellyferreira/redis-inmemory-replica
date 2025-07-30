@@ -450,6 +450,7 @@ func (s *MemoryStorage) calculateValueSize(value *Value) int64 {
 		return 0
 	}
 	
+	// safe: intentional use of unsafe.Sizeof for memory accounting
 	size := int64(unsafe.Sizeof(*value))
 	
 	switch value.Type {

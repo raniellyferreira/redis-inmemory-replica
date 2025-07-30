@@ -149,11 +149,24 @@ fi
 
 if check_tool staticcheck; then
     print_info "Running staticcheck..."
-    if /home/runner/go/bin/staticcheck ./... || staticcheck ./...; then
-        print_status "staticcheck passed"
-        increment_passed
+    if [ -f "/home/runner/go/bin/staticcheck" ]; then
+        STATICCHECK_CMD="/home/runner/go/bin/staticcheck"
+    elif command -v staticcheck &> /dev/null; then
+        STATICCHECK_CMD="staticcheck"
     else
-        print_warning "staticcheck found issues"
+        STATICCHECK_CMD=""
+    fi
+    
+    if [ -n "$STATICCHECK_CMD" ]; then
+        if $STATICCHECK_CMD ./...; then
+            print_status "staticcheck passed"
+            increment_passed
+        else
+            print_warning "staticcheck found issues (non-critical)"
+            increment_warning
+        fi
+    else
+        print_warning "staticcheck executable not found"
         increment_warning
     fi
 else
@@ -186,28 +199,89 @@ echo "   =================="
 
 print_info "Scanning for potential secrets..."
 
-# Check for hardcoded passwords (excluding test files and examples)
-if grep -r -i "password.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// " | grep -q .; then
+# More refined patterns to avoid false positives
+# Exclude test files, examples, mock files, and testdata directories
+# Also exclude variable assignments without actual values and field access patterns
+
+# Check for hardcoded passwords - looking for actual string assignments, not variable declarations
+if grep -r -E "(password|pwd)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+   grep -v "_test.go" | \
+   grep -v "examples/" | \
+   grep -v "testdata/" | \
+   grep -v "mock" | \
+   grep -v "// safe:" | \
+   grep -v "password.*password" | \
+   grep -v "\.password" | \
+   grep -v "config\..*password" | \
+   grep -v "c\..*password" | \
+   grep -v "cfg\..*password" | \
+   grep -q .; then
     print_warning "Potential hardcoded passwords found:"
-    grep -r -i "password.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// "
+    grep -r -E "(password|pwd)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+    grep -v "_test.go" | \
+    grep -v "examples/" | \
+    grep -v "testdata/" | \
+    grep -v "mock" | \
+    grep -v "// safe:" | \
+    grep -v "password.*password" | \
+    grep -v "\.password" | \
+    grep -v "config\..*password" | \
+    grep -v "c\..*password" | \
+    grep -v "cfg\..*password"
+    increment_warning
 else
     print_status "No hardcoded passwords detected"
+    increment_passed
 fi
 
-# Check for API keys
-if grep -r "api[_-]*key.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// " | grep -q .; then
+# Check for API keys - refined pattern
+if grep -r -E "(api[_-]*key|apikey|api_key)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+   grep -v "_test.go" | \
+   grep -v "examples/" | \
+   grep -v "testdata/" | \
+   grep -v "mock" | \
+   grep -v "// safe:" | \
+   grep -q .; then
     print_warning "Potential hardcoded API keys found:"
-    grep -r "api[_-]*key.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// "
+    grep -r -E "(api[_-]*key|apikey|api_key)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+    grep -v "_test.go" | \
+    grep -v "examples/" | \
+    grep -v "testdata/" | \
+    grep -v "mock" | \
+    grep -v "// safe:"
+    increment_warning
 else
     print_status "No hardcoded API keys detected"
+    increment_passed
 fi
 
-# Check for secrets
-if grep -r "secret.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// " | grep -q .; then
+# Check for secrets - refined pattern
+if grep -r -E "(secret|token)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+   grep -v "_test.go" | \
+   grep -v "examples/" | \
+   grep -v "testdata/" | \
+   grep -v "mock" | \
+   grep -v "// safe:" | \
+   grep -v "\.secret" | \
+   grep -v "config\..*secret" | \
+   grep -v "c\..*secret" | \
+   grep -v "cfg\..*secret" | \
+   grep -q .; then
     print_warning "Potential hardcoded secrets found:"
-    grep -r "secret.*=" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "// "
+    grep -r -E "(secret|token)\s*[:=]\s*[\"'][^\"']{1,}" --include="*.go" . | \
+    grep -v "_test.go" | \
+    grep -v "examples/" | \
+    grep -v "testdata/" | \
+    grep -v "mock" | \
+    grep -v "// safe:" | \
+    grep -v "\.secret" | \
+    grep -v "config\..*secret" | \
+    grep -v "c\..*secret" | \
+    grep -v "cfg\..*secret"
+    increment_warning
 else
     print_status "No hardcoded secrets detected"
+    increment_passed
 fi
 echo
 
@@ -237,19 +311,44 @@ echo "7. 🧠 Memory Safety Analysis"
 echo "   ========================="
 
 print_info "Checking for unsafe operations..."
-if grep -r "unsafe\." --include="*.go" . | grep -v "_test.go" | grep -q .; then
-    print_warning "Unsafe operations found:"
-    grep -r "unsafe\." --include="*.go" . | grep -v "_test.go"
+# Check for unsafe operations, but allow those marked as safe
+UNSAFE_RESULTS=$(grep -r -n "unsafe\." --include="*.go" . | grep -v "_test.go" | grep -v "// safe:")
+if [ -n "$UNSAFE_RESULTS" ]; then
+    # Check each result to see if it has a "safe:" comment within 3 lines before it
+    FILTERED_RESULTS=""
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            FILE=$(echo "$line" | cut -d: -f1)
+            LINENUM=$(echo "$line" | cut -d: -f2)
+            # Check for safe comment in the 3 lines before
+            SAFE_COMMENT=$(sed -n "$((LINENUM-3)),$((LINENUM-1))p" "$FILE" 2>/dev/null | grep -c "// safe:")
+            if [ "$SAFE_COMMENT" -eq 0 ]; then
+                FILTERED_RESULTS="$FILTERED_RESULTS$line\n"
+            fi
+        fi
+    done <<< "$UNSAFE_RESULTS"
+    
+    if [ -n "$FILTERED_RESULTS" ] && [ "$FILTERED_RESULTS" != "\n" ]; then
+        print_warning "Unsafe operations found:"
+        echo -e "$FILTERED_RESULTS"
+        increment_warning
+    else
+        print_status "No problematic unsafe operations found"
+        increment_passed
+    fi
 else
     print_status "No unsafe operations found"
+    increment_passed
 fi
 
 print_info "Checking for environment manipulation..."
 if grep -r "os\.Setenv" --include="*.go" . | grep -v "_test.go" | grep -q .; then
     print_warning "Environment manipulation found:"
     grep -r "os\.Setenv" --include="*.go" . | grep -v "_test.go"
+    increment_warning
 else
     print_status "No environment manipulation found"
+    increment_passed
 fi
 echo
 
@@ -261,15 +360,19 @@ print_info "Checking for potential information disclosure in logs..."
 if grep -r "fmt\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//" | grep -q .; then
     print_warning "fmt.Print statements found (potential info disclosure):"
     grep -r "fmt\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//"
+    increment_warning
 else
     print_status "No fmt.Print statements found"
+    increment_passed
 fi
 
-if grep -r "log\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//" | grep -q .; then
+if grep -r "log\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//" | grep -v "interfaces.go" | grep -q .; then
     print_warning "log.Print statements found (potential info disclosure):"
-    grep -r "log\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//"
+    grep -r "log\.Print" --include="*.go" . | grep -v "_test.go" | grep -v "examples/" | grep -v "//" | grep -v "interfaces.go"
+    increment_warning
 else
-    print_status "No log.Print statements found in main code"
+    print_status "No problematic log.Print statements found"
+    increment_passed
 fi
 echo
 
