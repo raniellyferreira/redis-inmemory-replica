@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raniellyferreira/redis-inmemory-replica"
+	redisreplica "github.com/raniellyferreira/redis-inmemory-replica"
 )
 
 func TestNew(t *testing.T) {

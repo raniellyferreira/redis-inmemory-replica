@@ -27,13 +27,7 @@ jobs:
     - name: Run tests
       run: go test -race ./...
 
-    - name: Build examples
-      run: |
-        mkdir -p dist
-        GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/raniellyferreira/redis-inmemory-replica.GitCommit=${{ github.sha }} -X github.com/raniellyferreira/redis-inmemory-replica.BuildTime=$(date -u +%Y%m%d.%H%M%S)" -o dist/basic-example-linux-amd64 ./examples/basic
-        GOOS=darwin GOARCH=amd64 go build -ldflags "-X github.com/raniellyferreira/redis-inmemory-replica.GitCommit=${{ github.sha }} -X github.com/raniellyferreira/redis-inmemory-replica.BuildTime=$(date -u +%Y%m%d.%H%M%S)" -o dist/basic-example-darwin-amd64 ./examples/basic
-        GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/raniellyferreira/redis-inmemory-replica.GitCommit=${{ github.sha }} -X github.com/raniellyferreira/redis-inmemory-replica.BuildTime=$(date -u +%Y%m%d.%H%M%S)" -o dist/basic-example-darwin-arm64 ./examples/basic
-        GOOS=windows GOARCH=amd64 go build -ldflags "-X github.com/raniellyferreira/redis-inmemory-replica.GitCommit=${{ github.sha }} -X github.com/raniellyferreira/redis-inmemory-replica.BuildTime=$(date -u +%Y%m%d.%H%M%S)" -o dist/basic-example-windows-amd64.exe ./examples/basic
+
 
     - name: Generate changelog
       id: changelog
@@ -44,7 +38,6 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/*
         body_path: CHANGELOG.md
         draft: false
         prerelease: false
