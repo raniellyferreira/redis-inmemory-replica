@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/yuin/gopher-lua"
+	lua "github.com/yuin/gopher-lua"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
@@ -13,7 +13,6 @@ import (
 type Engine struct {
 	storage storage.Storage
 	scripts sync.Map // map[string]string - SHA1 -> script content
-	mu      sync.RWMutex
 }
 
 // NewEngine creates a new Lua execution engine

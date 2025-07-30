@@ -526,25 +526,33 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 
 func (c *Client) writeString(s string) {
 	c.writer.WriteSimpleString(s)
+	c.writer.Flush()
 }
 
 func (c *Client) writeError(s string) {
 	c.server.mu.Lock()
 	c.server.errorCount++
 	c.server.mu.Unlock()
-	c.writer.WriteError(s)
+	// Clean error message by removing internal newlines which can break RESP protocol
+	cleanMsg := strings.ReplaceAll(s, "\n", " ")
+	cleanMsg = strings.ReplaceAll(cleanMsg, "\r", " ")
+	c.writer.WriteError(cleanMsg)
+	c.writer.Flush()
 }
 
 func (c *Client) writeBulkString(data []byte) {
 	c.writer.WriteBulkString(data)
+	c.writer.Flush()
 }
 
 func (c *Client) writeNull() {
 	c.writer.WriteNullBulkString()
+	c.writer.Flush()
 }
 
 func (c *Client) writeInteger(i int64) {
 	c.writer.WriteInteger(i)
+	c.writer.Flush()
 }
 
 func (c *Client) writeArray(array []interface{}) {
@@ -554,6 +562,7 @@ func (c *Client) writeArray(array []interface{}) {
 		values[i] = c.convertToValue(item)
 	}
 	c.writer.WriteArray(values)
+	c.writer.Flush()
 }
 
 func (c *Client) convertToValue(item interface{}) protocol.Value {
