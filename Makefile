@@ -33,6 +33,7 @@ build: ## Build the library and examples
 	$(GOBUILD) $(LDFLAGS) -o bin/basic-example ./examples/basic
 	$(GOBUILD) $(LDFLAGS) -o bin/monitoring-example ./examples/monitoring
 	$(GOBUILD) $(LDFLAGS) -o bin/cluster-example ./examples/cluster
+	$(GOBUILD) $(LDFLAGS) -o bin/database-filtering-example ./examples/database-filtering
 
 test: ## Run tests
 	@echo "Running tests..."

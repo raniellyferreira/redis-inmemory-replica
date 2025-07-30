@@ -173,3 +173,59 @@ func (m *testMetrics) RecordKeyCount(count int64)                               
 func (m *testMetrics) RecordMemoryUsage(bytes int64)                              {}
 func (m *testMetrics) RecordReconnection()                                        {}
 func (m *testMetrics) RecordError(errorType string)                               {}
+
+// TestDatabaseFiltering tests the database filtering functionality
+func TestDatabaseFiltering(t *testing.T) {
+	// Test valid database configuration
+	replica, err := redisreplica.New(
+		redisreplica.WithMaster("localhost:6379"),
+		redisreplica.WithDatabases([]int{0, 1, 2}),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create replica with database filtering: %v", err)
+	}
+	defer replica.Close()
+
+	// Test empty database list (should replicate all)
+	replica2, err := redisreplica.New(
+		redisreplica.WithMaster("localhost:6379"),
+		redisreplica.WithDatabases([]int{}),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create replica with empty database list: %v", err)
+	}
+	defer replica2.Close()
+}
+
+// TestDatabaseFilteringInvalid tests invalid database numbers
+func TestDatabaseFilteringInvalid(t *testing.T) {
+	// Test invalid database number (negative)
+	_, err := redisreplica.New(
+		redisreplica.WithMaster("localhost:6379"),
+		redisreplica.WithDatabases([]int{-1}),
+	)
+	if err == nil {
+		t.Fatal("Expected error for negative database number")
+	}
+
+	// Test invalid database number (too high)
+	_, err = redisreplica.New(
+		redisreplica.WithMaster("localhost:6379"),
+		redisreplica.WithDatabases([]int{16}),
+	)
+	if err == nil {
+		t.Fatal("Expected error for database number > 15")
+	}
+}
+
+// TestReplicaAuthentication tests replica authentication configuration
+func TestReplicaAuthentication(t *testing.T) {
+	replica, err := redisreplica.New(
+		redisreplica.WithMaster("localhost:6379"),
+		redisreplica.WithReplicaAuth("replica-password"),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create replica with authentication: %v", err)
+	}
+	defer replica.Close()
+}

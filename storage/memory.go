@@ -58,43 +58,40 @@ func NewMemory() *MemoryStorage {
 // Get retrieves a value by key
 func (s *MemoryStorage) Get(key string) ([]byte, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	
 	db := s.databases[s.currentDB]
 	value, exists := db.data[key]
 	if !exists {
-		return nil, false
-	}
-	
-	// Check expiration
-	if value.IsExpired() {
-		// Remove expired key (upgrade to write lock)
 		s.mu.RUnlock()
-		s.mu.Lock()
-		delete(db.data, key)
-		s.keyCount--
-		s.updateMemoryUsage()
-		s.mu.Unlock()
-		s.mu.RLock()
-		
-		// Notify observers
-		for _, observer := range s.observers {
-			observer.OnKeyExpired(key)
-		}
-		
 		return nil, false
 	}
 	
-	// Notify observers
+	// Check expiration without releasing lock
+	if value.IsExpired() {
+		s.mu.RUnlock()
+		// Use a separate method to delete expired key safely
+		s.deleteExpiredKey(key)
+		return nil, false
+	}
+	
+	// Copy the data while holding the read lock
+	var result []byte
+	if value.Type == ValueTypeString {
+		if stringVal, ok := value.Data.(*StringValue); ok {
+			result = make([]byte, len(stringVal.Data))
+			copy(result, stringVal.Data)
+		}
+	}
+	
+	// Notify observers (hold read lock to prevent value from changing)
 	for _, observer := range s.observers {
 		observer.OnKeyAccessed(key)
 	}
 	
-	// Return string value
-	if value.Type == ValueTypeString {
-		if stringVal, ok := value.Data.(*StringValue); ok {
-			return stringVal.Data, true
-		}
+	s.mu.RUnlock()
+	
+	if result != nil {
+		return result, true
 	}
 	
 	return nil, false
@@ -511,6 +508,30 @@ func (s *MemoryStorage) performCleanup() {
 	}
 	
 	s.updateMemoryUsage()
+}
+
+// deleteExpiredKey safely deletes an expired key without race conditions
+func (s *MemoryStorage) deleteExpiredKey(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	db := s.databases[s.currentDB]
+	value, exists := db.data[key]
+	if !exists {
+		return
+	}
+	
+	// Double-check expiration under write lock
+	if value.IsExpired() {
+		delete(db.data, key)
+		s.keyCount--
+		s.updateMemoryUsage()
+		
+		// Notify observers
+		for _, observer := range s.observers {
+			observer.OnKeyExpired(key)
+		}
+	}
 }
 
 // matchPattern performs simple pattern matching (supports * and ?)

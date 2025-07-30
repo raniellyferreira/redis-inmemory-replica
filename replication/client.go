@@ -48,10 +48,11 @@ type Client struct {
 	onSyncComplete []func()
 	
 	// Configuration
-	logger       Logger
-	metrics      MetricsCollector
-	syncTimeout  time.Duration
+	logger         Logger
+	metrics        MetricsCollector
+	syncTimeout    time.Duration
 	commandFilters map[string]struct{}
+	databases      map[int]struct{} // Which databases to replicate (empty = all)
 }
 
 // ReplicationStats tracks replication statistics
@@ -93,16 +94,17 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	return &Client{
-		masterAddr:   masterAddr,
-		storage:      stor,
-		ctx:          ctx,
-		cancel:       cancel,
-		stopChan:     make(chan struct{}),
-		doneChan:     make(chan struct{}),
-		stats:        &ReplicationStats{MasterAddr: masterAddr},
-		syncTimeout:  30 * time.Second,
+		masterAddr:     masterAddr,
+		storage:        stor,
+		ctx:            ctx,
+		cancel:         cancel,
+		stopChan:       make(chan struct{}),
+		doneChan:       make(chan struct{}),
+		stats:          &ReplicationStats{MasterAddr: masterAddr},
+		syncTimeout:    30 * time.Second,
 		commandFilters: make(map[string]struct{}),
-		logger:       &defaultLogger{},
+		databases:      make(map[int]struct{}), // empty = replicate all
+		logger:         &defaultLogger{},
 	}
 }
 
@@ -136,6 +138,15 @@ func (c *Client) SetCommandFilters(commands []string) {
 	c.commandFilters = make(map[string]struct{})
 	for _, cmd := range commands {
 		c.commandFilters[strings.ToUpper(cmd)] = struct{}{}
+	}
+}
+
+// SetDatabases sets which databases to replicate
+// Empty slice means replicate all databases
+func (c *Client) SetDatabases(databases []int) {
+	c.databases = make(map[int]struct{})
+	for _, db := range databases {
+		c.databases[db] = struct{}{}
 	}
 }
 
@@ -417,8 +428,9 @@ func (c *Client) performFullSync() error {
 	
 	// Create RDB handler
 	handler := &rdbStorageHandler{
-		storage: c.storage,
-		logger:  c.logger,
+		storage:   c.storage,
+		logger:    c.logger,
+		databases: c.databases,
 	}
 	
 	// Read RDB data length
@@ -484,6 +496,25 @@ func (c *Client) processCommand(value protocol.Value) error {
 	if len(c.commandFilters) > 0 {
 		if _, allowed := c.commandFilters[cmd.Name]; !allowed {
 			return nil // Skip filtered command
+		}
+	}
+	
+	// Apply database filtering for SELECT command
+	if cmd.Name == "SELECT" && len(c.databases) > 0 {
+		if len(cmd.Args) == 1 {
+			if db, err := strconv.Atoi(string(cmd.Args[0])); err == nil {
+				if _, allowed := c.databases[db]; !allowed {
+					return nil // Skip database selection for non-replicated database
+				}
+			}
+		}
+	}
+	
+	// For data commands, check if current database should be replicated
+	if len(c.databases) > 0 && isDataCommand(cmd.Name) {
+		currentDB := c.storage.CurrentDB()
+		if _, allowed := c.databases[currentDB]; !allowed {
+			return nil // Skip command in non-replicated database
 		}
 	}
 	
@@ -563,17 +594,50 @@ func (c *Client) recordMetricError(errorType string) {
 	}
 }
 
+// isDataCommand returns true if the command modifies data
+func isDataCommand(cmd string) bool {
+	switch cmd {
+	case "SET", "DEL", "EXPIRE", "PERSIST", "INCR", "DECR", "INCRBY", "DECRBY",
+		 "APPEND", "SETRANGE", "GETSET", "SETNX", "SETEX", "PSETEX", "MSET", "MSETNX",
+		 "LPUSH", "RPUSH", "LPOP", "RPOP", "LSET", "LTRIM", "LINSERT", "LREM",
+		 "SADD", "SREM", "SPOP", "SMOVE", "SINTERSTORE", "SUNIONSTORE", "SDIFFSTORE",
+		 "ZADD", "ZREM", "ZINCRBY", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREMRANGEBYLEX",
+		 "ZINTERSTORE", "ZUNIONSTORE", "HSET", "HDEL", "HINCRBY", "HINCRBYFLOAT", "HMSET":
+		return true
+	default:
+		return false
+	}
+}
+
 // rdbStorageHandler implements RDBHandler for storage
 type rdbStorageHandler struct {
-	storage storage.Storage
-	logger  Logger
+	storage   storage.Storage
+	logger    Logger
+	databases map[int]struct{} // Which databases to replicate (empty = all)
+	currentDB int
 }
 
 func (h *rdbStorageHandler) OnDatabase(index int) error {
+	h.currentDB = index
+	
+	// Skip database if not in filter list (when filter is set)
+	if len(h.databases) > 0 {
+		if _, allowed := h.databases[index]; !allowed {
+			return nil // Skip this database
+		}
+	}
+	
 	return h.storage.SelectDB(index)
 }
 
 func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Time) error {
+	// Skip key if current database is not allowed
+	if len(h.databases) > 0 {
+		if _, allowed := h.databases[h.currentDB]; !allowed {
+			return nil // Skip key in non-replicated database
+		}
+	}
+	
 	switch v := value.(type) {
 	case []byte:
 		return h.storage.Set(string(key), v, expiry)

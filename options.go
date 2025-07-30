@@ -13,7 +13,11 @@ type config struct {
 	masterTLS      *tls.Config
 	
 	// Replica server settings
-	replicaAddr string
+	replicaAddr     string
+	replicaPassword string
+	
+	// Database selection
+	databases []int // Which databases to replicate (empty = all)
 	
 	// Timeouts and limits
 	syncTimeout      time.Duration
@@ -37,6 +41,7 @@ func defaultConfig() *config {
 	return &config{
 		masterAddr:     "localhost:6379",
 		replicaAddr:    ":6380",
+		databases:      []int{}, // empty = replicate all databases
 		syncTimeout:    30 * time.Second,
 		connectTimeout: 5 * time.Second,
 		readTimeout:    30 * time.Second,
@@ -233,6 +238,37 @@ func WithServerEnabled(enabled bool) Option {
 func WithCommandFilters(commands []string) Option {
 	return func(c *config) error {
 		c.commandFilters = append([]string(nil), commands...)
+		return nil
+	}
+}
+
+// WithDatabases sets which databases to replicate
+// Empty slice means replicate all databases (default)
+//
+// Example:
+//   WithDatabases([]int{0, 1, 2}) // Only replicate databases 0, 1, and 2
+//   WithDatabases([]int{0})       // Only replicate database 0
+func WithDatabases(databases []int) Option {
+	return func(c *config) error {
+		// Validate database numbers
+		for _, db := range databases {
+			if db < 0 || db > 15 {
+				return ErrInvalidConfig
+			}
+		}
+		c.databases = append([]int(nil), databases...)
+		return nil
+	}
+}
+
+// WithReplicaAuth sets authentication password for the replica server
+// Clients connecting to the replica will need to authenticate with this password
+//
+// Example:
+//   WithReplicaAuth("replica-password")
+func WithReplicaAuth(password string) Option {
+	return func(c *config) error {
+		c.replicaPassword = password
 		return nil
 	}
 }

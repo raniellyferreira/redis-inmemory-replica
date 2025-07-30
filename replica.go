@@ -92,6 +92,7 @@ func New(opts ...Option) (*Replica, error) {
 	
 	syncMgr.SetSyncTimeout(cfg.syncTimeout)
 	syncMgr.SetCommandFilters(cfg.commandFilters)
+	syncMgr.SetDatabases(cfg.databases)
 	
 	replica := &Replica{
 		config:  cfg,

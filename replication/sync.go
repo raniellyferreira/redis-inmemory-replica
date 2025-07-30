@@ -79,6 +79,11 @@ func (sm *SyncManager) SetCommandFilters(commands []string) {
 	sm.client.SetCommandFilters(commands)
 }
 
+// SetDatabases sets which databases to replicate
+func (sm *SyncManager) SetDatabases(databases []int) {
+	sm.client.SetDatabases(databases)
+}
+
 // Start begins synchronization
 func (sm *SyncManager) Start(ctx context.Context) error {
 	// Register sync completion callback

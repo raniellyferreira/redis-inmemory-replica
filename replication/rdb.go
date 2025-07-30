@@ -244,6 +244,10 @@ func (p *RDBParser) readString() ([]byte, error) {
 		return nil, err
 	}
 	
+	// Allocate exact buffer size needed for the string data
+	// This allocation is necessary as we need to read exactly 'length' bytes
+	// from the RDB stream. Buffer pooling could be added here for optimization
+	// if needed, but it would complicate the code for minimal gains.
 	data := make([]byte, length)
 	if _, err := io.ReadFull(p.br, data); err != nil {
 		return nil, err
