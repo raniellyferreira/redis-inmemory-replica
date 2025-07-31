@@ -3,7 +3,6 @@ package storage
 import (
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -535,25 +534,15 @@ func (s *MemoryStorage) deleteExpiredKey(key string) {
 	}
 }
 
-// matchPattern performs simple pattern matching (supports * and ?)
+// matchPattern performs pattern matching using the configured strategy.
+// This function provides backward compatibility while allowing for different
+// matching strategies to be used based on global configuration.
+//
+// Supported strategies:
+// - StrategySimple: Optimized for single wildcard patterns (default)
+// - StrategyRegex: Uses regular expressions for complex patterns
+// - StrategyAutomaton: Uses finite state machines for pattern matching
+// - StrategyGlob: Uses Go's standard library filepath.Match
 func matchPattern(str, pattern string) bool {
-	// Simple implementation - in production you'd want more sophisticated pattern matching
-	if pattern == "*" {
-		return true
-	}
-	
-	if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") {
-		return str == pattern
-	}
-	
-	// For now, just check prefix/suffix with single *
-	if strings.HasPrefix(pattern, "*") {
-		return strings.HasSuffix(str, pattern[1:])
-	}
-	
-	if strings.HasSuffix(pattern, "*") {
-		return strings.HasPrefix(str, pattern[:len(pattern)-1])
-	}
-	
-	return str == pattern
+	return MatchPatternWithStrategy(str, pattern, GetMatchingStrategy())
 }
