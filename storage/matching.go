@@ -68,12 +68,12 @@ func MatchPatternWithStrategy(str, pattern string, strategy MatchingStrategy) bo
 // matchPatternSimple implements the optimized algorithm for simple patterns
 // This is based on the reference implementation provided in the problem statement
 func matchPatternSimple(key, pattern string) bool {
-	// Se pattern for vazio, só corresponde com key vazio
+	// If pattern is empty, only matches empty key
 	if pattern == "" {
 		return key == ""
 	}
 
-	// Se pattern for "*", não é válido (pode mudar para true se quiser wildcard total)
+	// If pattern is "*", matches any non-empty key
 	if pattern == "*" {
 		return key != ""
 	}
@@ -135,7 +135,7 @@ func matchPatternRegex(str, pattern string) bool {
 // globToRegex converts a glob pattern to a regular expression
 func globToRegex(pattern string) string {
 	var result strings.Builder
-	for i, char := range pattern {
+	for _, char := range pattern {
 		switch char {
 		case '*':
 			result.WriteString(".*")
@@ -148,7 +148,6 @@ func globToRegex(pattern string) string {
 		default:
 			result.WriteRune(char)
 		}
-		_ = i // Avoid unused variable warning
 	}
 	return result.String()
 }
