@@ -105,3 +105,80 @@ type MemoryLimitedStorage interface {
 	GetMemoryLimit() int64
 	EvictLRU(count int) int64
 }
+
+// CleanupConfigurableStorage extends Storage with cleanup configuration
+type CleanupConfigurableStorage interface {
+	Storage
+	
+	// Cleanup configuration
+	SetCleanupConfig(config CleanupConfig)
+	GetCleanupConfig() CleanupConfig
+}
+
+// CleanupConfig holds configuration for incremental cleanup
+type CleanupConfig struct {
+	// SampleSize is the number of keys to sample per round
+	SampleSize int
+	// MaxRounds is the maximum number of rounds per cleanup cycle
+	MaxRounds int
+	// BatchSize is the number of keys to delete in each batch
+	BatchSize int
+	// ExpiredThreshold continues cleanup if this percentage of sampled keys are expired
+	ExpiredThreshold float64
+}
+
+// Predefined CleanupConfig constants for different use cases
+
+// CleanupConfigDefault provides balanced performance for most use cases
+// Similar to Redis native behavior with good performance/resource balance
+var CleanupConfigDefault = CleanupConfig{
+	SampleSize:       20,    // Sample 20 keys per round
+	MaxRounds:        4,     // Maximum 4 rounds per cleanup cycle
+	BatchSize:        10,    // Delete up to 10 keys per batch
+	ExpiredThreshold: 0.25,  // Continue if >25% of sampled keys are expired
+}
+
+// CleanupConfigSmallDataset optimized for datasets with < 10,000 keys
+// More conservative approach to minimize overhead
+var CleanupConfigSmallDataset = CleanupConfig{
+	SampleSize:       10,    // Smaller sample size for small datasets
+	MaxRounds:        2,     // Fewer rounds to reduce overhead
+	BatchSize:        5,     // Smaller batches
+	ExpiredThreshold: 0.5,   // Higher threshold to avoid unnecessary work
+}
+
+// CleanupConfigMediumDataset optimized for datasets with 10,000-100,000 keys
+// Balanced approach with moderate resource usage
+var CleanupConfigMediumDataset = CleanupConfig{
+	SampleSize:       25,    // Moderate sample size
+	MaxRounds:        5,     // Good balance of thoroughness and performance
+	BatchSize:        12,    // Moderate batch size
+	ExpiredThreshold: 0.3,   // Moderate threshold
+}
+
+// CleanupConfigLargeDataset optimized for datasets with > 100,000 keys
+// More aggressive cleanup for large-scale deployments
+var CleanupConfigLargeDataset = CleanupConfig{
+	SampleSize:       50,    // Larger sample for better coverage
+	MaxRounds:        8,     // More rounds for thorough cleanup
+	BatchSize:        25,    // Larger batches for efficiency
+	ExpiredThreshold: 0.15,  // Lower threshold for more aggressive cleanup
+}
+
+// CleanupConfigBestPerformance optimized for maximum cleanup throughput
+// Uses larger batches and more aggressive settings for heavy workloads
+var CleanupConfigBestPerformance = CleanupConfig{
+	SampleSize:       100,   // Large sample size for maximum coverage
+	MaxRounds:        10,    // Maximum rounds for thorough cleanup
+	BatchSize:        50,    // Large batches for maximum efficiency
+	ExpiredThreshold: 0.1,   // Very aggressive threshold
+}
+
+// CleanupConfigLowLatency optimized for latency-sensitive applications
+// Minimizes cleanup impact on application response times
+var CleanupConfigLowLatency = CleanupConfig{
+	SampleSize:       15,    // Small sample to minimize lock time
+	MaxRounds:        3,     // Few rounds to minimize impact
+	BatchSize:        8,     // Small batches for minimal lock time
+	ExpiredThreshold: 0.4,   // Higher threshold to avoid excessive cleanup
+}

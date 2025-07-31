@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	randv2 "math/rand/v2"
 	"runtime"
 	"sync"
 	"time"
@@ -26,6 +27,12 @@ type MemoryStorage struct {
 	// Background cleanup
 	cleanupStop chan struct{}
 	cleanupDone chan struct{}
+	
+	// Cleanup configuration
+	cleanupConfig CleanupConfig
+	
+	// Random number generator for sampling
+	rng *randv2.Rand
 }
 
 // database represents a Redis database
@@ -41,6 +48,8 @@ func NewMemory() *MemoryStorage {
 		currentDB:   0,
 		cleanupStop: make(chan struct{}),
 		cleanupDone: make(chan struct{}),
+		cleanupConfig: CleanupConfigDefault,
+		rng:         randv2.New(randv2.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 	
 	// Initialize default database
@@ -400,6 +409,20 @@ func (s *MemoryStorage) AddObserver(observer StorageObserver) {
 	s.observers = append(s.observers, observer)
 }
 
+// SetCleanupConfig updates the cleanup configuration
+func (s *MemoryStorage) SetCleanupConfig(config CleanupConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupConfig = config
+}
+
+// GetCleanupConfig returns the current cleanup configuration
+func (s *MemoryStorage) GetCleanupConfig() CleanupConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cleanupConfig
+}
+
 // evictLRU evicts least recently used keys (internal, must hold lock)
 func (s *MemoryStorage) evictLRU(count int) int64 {
 	// This is a simplified LRU implementation
@@ -480,34 +503,162 @@ func (s *MemoryStorage) cleanupExpiredKeys() {
 	}
 }
 
-// performCleanup removes expired keys
+// performCleanup removes expired keys using incremental sampling approach
 func (s *MemoryStorage) performCleanup() {
+	config := s.GetCleanupConfig()
+	
+	for dbNum, db := range s.getActiveDatabases() {
+		s.cleanupDatabase(dbNum, db, config)
+	}
+}
+
+// getActiveDatabases returns a snapshot of active databases
+func (s *MemoryStorage) getActiveDatabases() map[int]*database {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	result := make(map[int]*database, len(s.databases))
+	for dbNum, db := range s.databases {
+		result[dbNum] = db
+	}
+	return result
+}
+
+// cleanupDatabase performs incremental cleanup on a single database
+func (s *MemoryStorage) cleanupDatabase(dbNum int, db *database, config CleanupConfig) {
+	for round := 0; round < config.MaxRounds; round++ {
+		expiredKeys := s.sampleAndFindExpired(db, config.SampleSize)
+		
+		if len(expiredKeys) == 0 {
+			break // No expired keys found, stop cleaning this database
+		}
+		
+		// Delete expired keys in batches to minimize lock time
+		s.deleteExpiredKeysBatched(dbNum, db, expiredKeys, config.BatchSize)
+		
+		// Check if we should continue with another round
+		expiredRatio := float64(len(expiredKeys)) / float64(config.SampleSize)
+		if expiredRatio < config.ExpiredThreshold {
+			break // Not many expired keys found, stop cleaning
+		}
+		
+		// Yield CPU briefly between rounds to allow other operations
+		runtime.Gosched()
+	}
+}
+
+// sampleAndFindExpired samples keys and finds expired ones
+func (s *MemoryStorage) sampleAndFindExpired(db *database, sampleSize int) []string {
+	// Take a read lock to get a sample of keys
+	s.mu.RLock()
+	
+	if len(db.data) == 0 {
+		s.mu.RUnlock()
+		return nil
+	}
+	
+	// Adjust sample size if needed
+	actualSampleSize := sampleSize
+	if len(db.data) < sampleSize {
+		actualSampleSize = len(db.data)
+	}
+	
+	// Sample keys randomly using reservoir sampling for better performance
+	sampledKeys := make([]string, 0, actualSampleSize)
+	
+	if len(db.data) <= actualSampleSize {
+		// If we need all keys or close to it, just collect them
+		for key := range db.data {
+			sampledKeys = append(sampledKeys, key)
+		}
+	} else {
+		// Use reservoir sampling algorithm - more efficient for large datasets
+		i := 0
+		for key := range db.data {
+			if i < actualSampleSize {
+				// Fill reservoir
+				sampledKeys = append(sampledKeys, key)
+			} else {
+				// Replace random element with probability sampleSize/i
+				j := s.rng.IntN(i + 1)
+				if j < actualSampleSize {
+					sampledKeys[j] = key
+				}
+			}
+			i++
+		}
+	}
+	
+	// Check which of the sampled keys are expired
+	expiredKeys := make([]string, 0, len(sampledKeys))
+	for _, key := range sampledKeys {
+		if value, exists := db.data[key]; exists && value.IsExpired() {
+			expiredKeys = append(expiredKeys, key)
+		}
+	}
+	
+	s.mu.RUnlock()
+	return expiredKeys
+}
+
+// deleteExpiredKeysBatched deletes expired keys in batches to minimize lock time
+func (s *MemoryStorage) deleteExpiredKeysBatched(dbNum int, db *database, expiredKeys []string, batchSize int) {
+	currentDB := s.getCurrentDB()
+	
+	for i := 0; i < len(expiredKeys); i += batchSize {
+		end := i + batchSize
+		if end > len(expiredKeys) {
+			end = len(expiredKeys)
+		}
+		
+		batch := expiredKeys[i:end]
+		s.deleteKeyBatch(dbNum, db, batch, dbNum == currentDB)
+		
+		// Yield between batches for better concurrency
+		if end < len(expiredKeys) {
+			runtime.Gosched()
+		}
+	}
+}
+
+// getCurrentDB returns the current database number
+func (s *MemoryStorage) getCurrentDB() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentDB
+}
+
+// deleteKeyBatch deletes a batch of keys with minimal lock time
+func (s *MemoryStorage) deleteKeyBatch(dbNum int, db *database, keys []string, updateKeyCount bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	for dbNum, db := range s.databases {
-		expiredKeys := make([]string, 0)
-		
-		for key, value := range db.data {
+	deletedCount := 0
+	
+	for _, key := range keys {
+		if value, exists := db.data[key]; exists {
+			// Double-check expiration under write lock
 			if value.IsExpired() {
-				expiredKeys = append(expiredKeys, key)
-			}
-		}
-		
-		for _, key := range expiredKeys {
-			delete(db.data, key)
-			if dbNum == s.currentDB {
-				s.keyCount--
-			}
-			
-			// Notify observers
-			for _, observer := range s.observers {
-				observer.OnKeyExpired(key)
+				delete(db.data, key)
+				deletedCount++
+				
+				// Notify observers
+				for _, observer := range s.observers {
+					observer.OnKeyExpired(key)
+				}
 			}
 		}
 	}
 	
-	s.updateMemoryUsage()
+	// Update key count only for current database
+	if updateKeyCount && deletedCount > 0 {
+		s.keyCount -= int64(deletedCount)
+	}
+	
+	// Update memory usage only if keys were actually deleted
+	if deletedCount > 0 {
+		s.updateMemoryUsage()
+	}
 }
 
 // deleteExpiredKey safely deletes an expired key without race conditions
