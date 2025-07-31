@@ -259,6 +259,56 @@ replica, err := redisreplica.New(
 )
 ```
 
+## Storage Cleanup Configurations
+
+The library includes an optimized incremental cleanup system that mirrors Redis native behavior. Six predefined cleanup configurations are available for different use cases:
+
+### Predefined Configurations
+
+```go
+import "github.com/raniellyferreira/redis-inmemory-replica/storage"
+
+// For most use cases (default)
+replica.Storage().SetCleanupConfig(storage.CleanupConfigDefault)
+
+// Optimized for specific dataset sizes
+replica.Storage().SetCleanupConfig(storage.CleanupConfigSmallDataset)    // < 10,000 keys
+replica.Storage().SetCleanupConfig(storage.CleanupConfigMediumDataset)   // 10,000-100,000 keys  
+replica.Storage().SetCleanupConfig(storage.CleanupConfigLargeDataset)    // > 100,000 keys
+
+// Performance-focused configurations
+replica.Storage().SetCleanupConfig(storage.CleanupConfigBestPerformance) // Maximum cleanup throughput
+replica.Storage().SetCleanupConfig(storage.CleanupConfigLowLatency)      // Minimal impact on response times
+```
+
+### Configuration Details
+
+| Configuration | Sample Size | Max Rounds | Batch Size | Expired Threshold | Use Case |
+|---------------|-------------|------------|------------|-------------------|----------|
+| `CleanupConfigDefault` | 20 | 4 | 10 | 25% | Balanced performance for most applications |
+| `CleanupConfigSmallDataset` | 10 | 2 | 5 | 50% | Datasets with < 10,000 keys |
+| `CleanupConfigMediumDataset` | 25 | 5 | 12 | 30% | Datasets with 10,000-100,000 keys |
+| `CleanupConfigLargeDataset` | 50 | 8 | 25 | 15% | Datasets with > 100,000 keys |
+| `CleanupConfigBestPerformance` | 100 | 10 | 50 | 10% | Maximum cleanup throughput |
+| `CleanupConfigLowLatency` | 15 | 3 | 8 | 40% | Latency-sensitive applications |
+
+### Custom Configuration
+
+For specific requirements, you can create custom cleanup configurations:
+
+```go
+import "github.com/raniellyferreira/redis-inmemory-replica/storage"
+
+customConfig := storage.CleanupConfig{
+    SampleSize:       30,    // Keys sampled per round
+    MaxRounds:        6,     // Max cleanup rounds per cycle  
+    BatchSize:        15,    // Keys deleted per batch
+    ExpiredThreshold: 0.2,   // Continue if ≥20% sampled keys expired
+}
+
+replica.Storage().SetCleanupConfig(customConfig)
+```
+
 ## Security
 
 This library includes comprehensive security features for production deployments:
