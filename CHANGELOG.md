@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Flexible Configuration**: Extensive options for timeouts, limits, and behavior
 - **Observability**: Built-in metrics collection and structured logging
 - **Reliability**: Automatic reconnection and partial sync support
+- **Lua Scripting**: Redis-compatible Lua script execution with EVAL/EVALSHA support
+- **Data Types**: Support for Redis Lists, Sets, Hashes, and Sorted Sets
+- **Security**: SSL/TLS support for secure master connections
+- **Filtering**: Advanced command filtering and database selection
+- **Persistence**: Snapshot and restore capabilities for data persistence
+- **Clustering**: Multi-replica management and chaining support
 
 ### API
 - `New()` - Create new replica with options
@@ -47,9 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic usage example
 - Monitoring and observability example  
 - Multi-replica cluster example
+- Database filtering example
+- Lua scripting demonstration
+- Pattern matching example
 
 ### Supported Redis Features
 - String operations (GET, SET, DEL, etc.)
+- List operations (LPUSH, RPUSH, LPOP, RPOP, LLEN, etc.)
+- Set operations (SADD, SREM, SMEMBERS, etc.)
+- Hash operations (HSET, HGET, HDEL, HKEYS, etc.)
+- Sorted Set operations (ZADD, ZREM, ZRANGE, etc.)
 - Key operations (EXISTS, EXPIRE, TTL, etc.)
 - Database selection (SELECT)
 - Multiple databases (0-15)
@@ -57,21 +70,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RESP protocol versions 2 and 3
 - RDB file format parsing
 - Command replication
+- Lua script execution (EVAL, EVALSHA)
+- Advanced command filtering by database
+- SSL/TLS connections to Redis masters
+- Persistence with snapshot/restore capabilities
+- Replica chaining and cluster management
 
 ### Dependencies
 - Go 1.24.5 or higher
-- No external dependencies (standard library only)
+- github.com/yuin/gopher-lua v1.1.1 (for Lua script support)
 
 ## [Unreleased]
 
-### Planned Features
-- Redis Cluster support
-- Additional Redis data types (Lists, Sets, Hashes, Sorted Sets)
-- Persistence layer for restart recovery
+### Planned for v1.1.0
+- Performance optimizations for high-throughput scenarios
+- Enhanced error handling and recovery mechanisms
+- Additional configuration options for fine-tuning
+- Improved documentation and examples
+
+### Planned Features (Future Releases)
+- Redis Cluster support (cluster protocol implementation)
+- Redis Streams operations (XADD, XREAD, XRANGE, etc.)
 - HTTP health check endpoints
-- Prometheus metrics export
-- Redis Streams support
-- Lua script support (read-only)
-- SSL/TLS support for Redis connections
-- Advanced command filtering
-- Replica chaining support
+- Enhanced Prometheus metrics with custom labels
+- Advanced Lua script sandboxing
+- Multi-master replication support
+- Real-time configuration updates
