@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Example binaries
+**/examples/**/pattern-matching-demo
+**/examples/**/*-example
+
 # Binary directory
 bin/
 
