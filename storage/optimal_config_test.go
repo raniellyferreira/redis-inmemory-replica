@@ -193,13 +193,8 @@ func setupTestData(s *storage.MemoryStorage, totalKeys int, expiredRatio float64
 
 // TestRecommendedConfiguration validates the final recommended configuration
 func TestRecommendedConfiguration(t *testing.T) {
-	// Based on testing, this appears to be the optimal configuration
-	recommendedConfig := storage.CleanupConfig{
-		SampleSize:       20,    // Good balance of coverage vs performance
-		MaxRounds:        4,     // Sufficient for most workloads
-		BatchSize:        10,    // Small enough to minimize lock time
-		ExpiredThreshold: 0.25,  // Continue if 25% or more keys are expired
-	}
+	// Use the predefined default configuration which is based on testing and Redis behavior
+	recommendedConfig := storage.CleanupConfigDefault
 
 	s := storage.NewMemory()
 	defer s.Close()

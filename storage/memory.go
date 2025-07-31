@@ -2,7 +2,7 @@ package storage
 
 import (
 	"fmt"
-	"math/rand"
+	randv2 "math/rand/v2"
 	"runtime"
 	"strings"
 	"sync"
@@ -31,6 +31,9 @@ type MemoryStorage struct {
 	
 	// Cleanup configuration
 	cleanupConfig CleanupConfig
+	
+	// Random number generator for sampling
+	rng *randv2.Rand
 }
 
 // database represents a Redis database
@@ -46,12 +49,8 @@ func NewMemory() *MemoryStorage {
 		currentDB:   0,
 		cleanupStop: make(chan struct{}),
 		cleanupDone: make(chan struct{}),
-		cleanupConfig: CleanupConfig{
-			SampleSize:       20,    // Sample 20 keys per round
-			MaxRounds:        4,     // Maximum 4 rounds per cleanup cycle
-			BatchSize:        10,    // Delete up to 10 keys per batch
-			ExpiredThreshold: 0.25,  // Continue if >25% of sampled keys are expired
-		},
+		cleanupConfig: CleanupConfigDefault,
+		rng:         randv2.New(randv2.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 	
 	// Initialize default database
@@ -565,23 +564,29 @@ func (s *MemoryStorage) sampleAndFindExpired(db *database, sampleSize int) []str
 		actualSampleSize = len(db.data)
 	}
 	
-	// Sample keys randomly
+	// Sample keys randomly using reservoir sampling for better performance
 	sampledKeys := make([]string, 0, actualSampleSize)
-	keyList := make([]string, 0, len(db.data))
 	
-	// Get all keys first
-	for key := range db.data {
-		keyList = append(keyList, key)
-	}
-	
-	// Randomly sample keys
-	if len(keyList) <= actualSampleSize {
-		sampledKeys = keyList
+	if len(db.data) <= actualSampleSize {
+		// If we need all keys or close to it, just collect them
+		for key := range db.data {
+			sampledKeys = append(sampledKeys, key)
+		}
 	} else {
-		// Use Fisher-Yates shuffle to get random sample
-		indices := rand.Perm(len(keyList))
-		for i := 0; i < actualSampleSize; i++ {
-			sampledKeys = append(sampledKeys, keyList[indices[i]])
+		// Use reservoir sampling algorithm - more efficient for large datasets
+		i := 0
+		for key := range db.data {
+			if i < actualSampleSize {
+				// Fill reservoir
+				sampledKeys = append(sampledKeys, key)
+			} else {
+				// Replace random element with probability sampleSize/i
+				j := s.rng.IntN(i + 1)
+				if j < actualSampleSize {
+					sampledKeys[j] = key
+				}
+			}
+			i++
 		}
 	}
 	
