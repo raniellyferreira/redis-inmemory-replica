@@ -47,31 +47,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic usage example
 - Monitoring and observability example  
 - Multi-replica cluster example
+- Database filtering example
+- Lua scripting demonstration
+- Pattern matching example
 
 ### Supported Redis Features
-- String operations (GET, SET, DEL, etc.)
-- Key operations (EXISTS, EXPIRE, TTL, etc.)
-- Database selection (SELECT)
-- Multiple databases (0-15)
-- Key expiration and TTL
+- String operations (GET, SET, DEL, EXISTS, TYPE)
+- Key operations (SELECT, multiple databases 0-15)
+- Key expiration and TTL (storage level)
 - RESP protocol versions 2 and 3
 - RDB file format parsing
 - Command replication
+- Lua script execution (EVAL, EVALSHA, SCRIPT LOAD/EXISTS/FLUSH)
+- SSL/TLS connections to Redis masters
 
 ### Dependencies
 - Go 1.24.5 or higher
-- No external dependencies (standard library only)
+- github.com/yuin/gopher-lua v1.1.1 (for Lua scripting support)
 
 ## [Unreleased]
 
 ### Planned Features
 - Redis Cluster support
-- Additional Redis data types (Lists, Sets, Hashes, Sorted Sets)
+- Additional Redis data types (Lists, Sets, Hashes, Sorted Sets) - command handlers
 - Persistence layer for restart recovery
 - HTTP health check endpoints
 - Prometheus metrics export
 - Redis Streams support
-- Lua script support (read-only)
-- SSL/TLS support for Redis connections
-- Advanced command filtering
+- Advanced command filtering by command type
 - Replica chaining support
