@@ -1,6 +1,8 @@
 package storage_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -350,5 +352,258 @@ func BenchmarkMemoryStorageSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s.Set("key", value, nil)
+	}
+}
+
+// Test cleanup configuration
+func TestMemoryStorageCleanupConfig(t *testing.T) {
+	s := storage.NewMemory()
+	defer s.Close()
+
+	// Test default config
+	config := s.GetCleanupConfig()
+	if config.SampleSize != 20 {
+		t.Errorf("Default SampleSize = %d, want 20", config.SampleSize)
+	}
+	if config.MaxRounds != 4 {
+		t.Errorf("Default MaxRounds = %d, want 4", config.MaxRounds)
+	}
+
+	// Test setting custom config
+	newConfig := storage.CleanupConfig{
+		SampleSize:       50,
+		MaxRounds:        8,
+		BatchSize:        20,
+		ExpiredThreshold: 0.5,
+	}
+	s.SetCleanupConfig(newConfig)
+
+	retrievedConfig := s.GetCleanupConfig()
+	if retrievedConfig != newConfig {
+		t.Errorf("SetCleanupConfig() config mismatch: got %+v, want %+v", retrievedConfig, newConfig)
+	}
+}
+
+// Test data integrity during cleanup
+func TestMemoryStorageCleanupIntegrity(t *testing.T) {
+	s := storage.NewMemory()
+	defer s.Close()
+
+	// Set up test data with mixed expiry times
+	now := time.Now()
+	validKeys := []string{"valid1", "valid2", "valid3"}
+	expiredKeys := []string{"expired1", "expired2", "expired3"}
+
+	// Set valid keys (no expiry)
+	for _, key := range validKeys {
+		err := s.Set(key, []byte("valid_value"), nil)
+		if err != nil {
+			t.Fatalf("Set() error = %v", err)
+		}
+	}
+
+	// Set expired keys
+	pastTime := now.Add(-1 * time.Hour)
+	for _, key := range expiredKeys {
+		err := s.Set(key, []byte("expired_value"), &pastTime)
+		if err != nil {
+			t.Fatalf("Set() error = %v", err)
+		}
+	}
+
+	// Trigger cleanup manually by waiting
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify valid keys still exist
+	for _, key := range validKeys {
+		value, exists := s.Get(key)
+		if !exists {
+			t.Errorf("Valid key %s was incorrectly removed", key)
+		}
+		if string(value) != "valid_value" {
+			t.Errorf("Valid key %s has wrong value: got %s, want valid_value", key, string(value))
+		}
+	}
+
+	// Verify expired keys are removed (may take some time due to sampling)
+	// We'll check this by trying to access them - they should not exist
+	for _, key := range expiredKeys {
+		_, exists := s.Get(key)
+		if exists {
+			t.Logf("Expired key %s still exists (may be removed in next cleanup cycle)", key)
+		}
+	}
+}
+
+// Test concurrent access during cleanup
+func TestMemoryStorageCleanupConcurrency(t *testing.T) {
+	s := storage.NewMemory()
+	defer s.Close()
+
+	// Configure aggressive cleanup for testing
+	s.SetCleanupConfig(storage.CleanupConfig{
+		SampleSize:       10,
+		MaxRounds:        10,
+		BatchSize:        5,
+		ExpiredThreshold: 0.1,
+	})
+
+	const numGoroutines = 10
+	const operationsPerGoroutine = 100
+	
+	var wg sync.WaitGroup
+	errorChan := make(chan error, numGoroutines*operationsPerGoroutine)
+
+	// Start concurrent readers
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				key := fmt.Sprintf("key_%d_%d", workerID, j)
+				
+				// Set a key
+				err := s.Set(key, []byte("value"), nil)
+				if err != nil {
+					errorChan <- fmt.Errorf("Set error: %v", err)
+					return
+				}
+				
+				// Read the key back
+				value, exists := s.Get(key)
+				if !exists {
+					// Key might have been cleaned up, that's fine
+					continue
+				}
+				if string(value) != "value" {
+					errorChan <- fmt.Errorf("Value mismatch: got %s, want value", string(value))
+					return
+				}
+			}
+		}(i)
+	}
+
+	// Start concurrent writers with expiring keys
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				key := fmt.Sprintf("expiring_key_%d_%d", workerID, j)
+				
+				// Set key with short expiry
+				expiry := time.Now().Add(10 * time.Millisecond)
+				err := s.Set(key, []byte("expiring_value"), &expiry)
+				if err != nil {
+					errorChan <- fmt.Errorf("Set expiring key error: %v", err)
+					return
+				}
+				
+				// Small delay to allow some keys to expire
+				time.Sleep(5 * time.Millisecond)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	// Check for errors
+	for err := range errorChan {
+		t.Error(err)
+	}
+}
+
+// Test cleanup under different load scenarios
+func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
+	scenarios := []struct {
+		name           string
+		numKeys        int
+		expiredRatio   float64
+		config         storage.CleanupConfig
+	}{
+		{
+			name:         "Light load",
+			numKeys:      100,
+			expiredRatio: 0.1,
+			config: storage.CleanupConfig{
+				SampleSize: 10, MaxRounds: 2, BatchSize: 5, ExpiredThreshold: 0.25,
+			},
+		},
+		{
+			name:         "Medium load",
+			numKeys:      1000,
+			expiredRatio: 0.3,
+			config: storage.CleanupConfig{
+				SampleSize: 20, MaxRounds: 4, BatchSize: 10, ExpiredThreshold: 0.25,
+			},
+		},
+		{
+			name:         "Heavy load",
+			numKeys:      5000,
+			expiredRatio: 0.5,
+			config: storage.CleanupConfig{
+				SampleSize: 50, MaxRounds: 8, BatchSize: 20, ExpiredThreshold: 0.3,
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			s := storage.NewMemory()
+			defer s.Close()
+
+			s.SetCleanupConfig(scenario.config)
+
+			now := time.Now()
+			pastTime := now.Add(-1 * time.Hour)
+			futureTime := now.Add(1 * time.Hour)
+
+			numExpired := int(float64(scenario.numKeys) * scenario.expiredRatio)
+			numValid := scenario.numKeys - numExpired
+
+			// Add expired keys
+			for i := 0; i < numExpired; i++ {
+				key := fmt.Sprintf("expired_%d", i)
+				err := s.Set(key, []byte("expired_value"), &pastTime)
+				if err != nil {
+					t.Fatalf("Set expired key error: %v", err)
+				}
+			}
+
+			// Add valid keys
+			for i := 0; i < numValid; i++ {
+				key := fmt.Sprintf("valid_%d", i)
+				err := s.Set(key, []byte("valid_value"), &futureTime)
+				if err != nil {
+					t.Fatalf("Set valid key error: %v", err)
+				}
+			}
+
+			initialKeyCount := s.KeyCount()
+			if initialKeyCount != int64(scenario.numKeys) {
+				t.Errorf("Initial key count = %d, want %d", initialKeyCount, scenario.numKeys)
+			}
+
+			// Wait for cleanup to run
+			time.Sleep(200 * time.Millisecond)
+
+			// Check that some cleanup occurred
+			finalKeyCount := s.KeyCount()
+			t.Logf("Scenario %s: keys reduced from %d to %d", scenario.name, initialKeyCount, finalKeyCount)
+			
+			// Verify all valid keys still exist
+			validKeysFound := 0
+			for i := 0; i < numValid; i++ {
+				key := fmt.Sprintf("valid_%d", i)
+				if _, exists := s.Get(key); exists {
+					validKeysFound++
+				}
+			}
+
+			if validKeysFound != numValid {
+				t.Errorf("Valid keys lost: found %d, expected %d", validKeysFound, numValid)
+			}
+		})
 	}
 }

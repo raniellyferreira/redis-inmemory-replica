@@ -105,3 +105,24 @@ type MemoryLimitedStorage interface {
 	GetMemoryLimit() int64
 	EvictLRU(count int) int64
 }
+
+// CleanupConfigurableStorage extends Storage with cleanup configuration
+type CleanupConfigurableStorage interface {
+	Storage
+	
+	// Cleanup configuration
+	SetCleanupConfig(config CleanupConfig)
+	GetCleanupConfig() CleanupConfig
+}
+
+// CleanupConfig holds configuration for incremental cleanup
+type CleanupConfig struct {
+	// SampleSize is the number of keys to sample per round
+	SampleSize int
+	// MaxRounds is the maximum number of rounds per cleanup cycle
+	MaxRounds int
+	// BatchSize is the number of keys to delete in each batch
+	BatchSize int
+	// ExpiredThreshold continues cleanup if this percentage of sampled keys are expired
+	ExpiredThreshold float64
+}
