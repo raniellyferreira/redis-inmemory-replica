@@ -1,7 +1,7 @@
 package redisreplica
 
 // Version is the current version of the redis-inmemory-replica library.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // GitCommit is the git commit hash (set by build flags)
 var GitCommit string
