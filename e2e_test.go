@@ -74,6 +74,10 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		t.Fatal("Context cancelled during initial sync")
 	}
 
+	// Give additional time for streaming connection to stabilize
+	// This helps ensure commands aren't lost during protocol synchronization
+	time.Sleep(2 * time.Second)
+
 	// Test 1: Set some keys in Redis and verify they appear in replica
 	t.Log("Test 1: Setting keys in Redis master")
 	testKeys := map[string]string{

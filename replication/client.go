@@ -535,6 +535,8 @@ func (c *Client) performFullSync() error {
 // streamCommands streams replication commands
 func (c *Client) streamCommands() error {
 	c.logger.Debug("Starting command streaming")
+	protocolErrorCount := 0
+	maxProtocolErrors := 5 // Allow a few protocol errors before reconnecting
 
 	for {
 		select {
@@ -547,15 +549,31 @@ func (c *Client) streamCommands() error {
 				if err == io.EOF {
 					return fmt.Errorf("connection closed")
 				}
-				// For protocol errors during streaming, log and continue
+				
+				// For protocol errors during streaming, count them and reconnect if too many
 				if strings.Contains(err.Error(), "unknown RESP type") ||
 					strings.Contains(err.Error(), "expected CRLF terminator") ||
-					strings.Contains(err.Error(), "expected bulk string") {
-					c.logger.Debug("Protocol error during streaming, continuing", "error", err)
+					strings.Contains(err.Error(), "expected bulk string") ||
+					strings.Contains(err.Error(), "empty byte") {
+					
+					protocolErrorCount++
+					c.logger.Debug("Protocol error during streaming", "error", err, "count", protocolErrorCount)
+					
+					// If we get too many protocol errors in a row, the connection is likely desynchronized
+					if protocolErrorCount >= maxProtocolErrors {
+						c.logger.Error("Too many protocol errors, reconnecting", "count", protocolErrorCount)
+						return fmt.Errorf("protocol desynchronization detected after %d errors: %w", protocolErrorCount, err)
+					}
+					
+					// Add a small delay to prevent tight loop
+					time.Sleep(10 * time.Millisecond)
 					continue
 				}
 				return fmt.Errorf("read command failed: %w", err)
 			}
+
+			// Reset error count on successful read
+			protocolErrorCount = 0
 
 			// Process command
 			if err := c.processCommand(value); err != nil {
