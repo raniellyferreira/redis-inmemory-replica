@@ -182,32 +182,51 @@ func (c *Client) SetDatabases(databases []int) {
 func (c *Client) Start(ctx context.Context) error {
 	c.logger.Info("Starting replication client", "master", c.masterAddr)
 
-	// Start replication goroutine
+	// Check if already running to prevent duplicate starts
+	c.mu.RLock()
+	if c.connected {
+		c.mu.RUnlock()
+		c.logger.Debug("Replication client already connected, skipping start")
+		return nil
+	}
+	c.mu.RUnlock()
+
+	// Start replication goroutine if not already running
 	go c.run()
 
-	// Wait for initial connection or timeout
-	select {
-	case <-time.After(c.syncTimeout):
-		return fmt.Errorf("connection timeout")
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-c.doneChan:
-		return fmt.Errorf("replication stopped unexpectedly")
-	default:
-		// Check if connected
-		c.mu.RLock()
-		connected := c.connected
-		c.mu.RUnlock()
-
-		if connected {
-			return nil
-		}
-
-		// Wait a bit more
-		time.Sleep(100 * time.Millisecond)
+	// Wait for initial connection with timeout
+	startTime := time.Now()
+	timeout := c.syncTimeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
 	}
 
-	return fmt.Errorf("failed to establish connection")
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.RLock()
+			connected := c.connected
+			c.mu.RUnlock()
+
+			if connected {
+				c.logger.Debug("Replication client connected successfully", "duration", time.Since(startTime))
+				return nil
+			}
+
+			// Check for timeout
+			if time.Since(startTime) > timeout {
+				return fmt.Errorf("connection timeout after %v", timeout)
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.doneChan:
+			return fmt.Errorf("replication stopped unexpectedly")
+		}
+	}
 }
 
 // Stop stops replication
@@ -290,6 +309,13 @@ func (c *Client) run() {
 				c.logger.Error("Sync failed", "error", err)
 				c.recordMetricError("sync")
 				c.disconnect()
+				
+				// Add backoff for sync failures to prevent tight loop
+				select {
+				case <-time.After(2 * time.Second):
+				case <-c.stopChan:
+					return
+				}
 				continue
 			}
 
@@ -413,7 +439,7 @@ func (c *Client) performSync() error {
 		return fmt.Errorf("PSYNC failed: %w", err)
 	}
 
-	// Read PSYNC response
+	// Read PSYNC response with improved error handling
 	response, err := c.reader.ReadNext()
 	if err != nil {
 		if err == io.EOF {
@@ -426,10 +452,13 @@ func (c *Client) performSync() error {
 		return fmt.Errorf("PSYNC error: %s", response.Error())
 	}
 
-	// Parse PSYNC response
-	parts := strings.Fields(response.String())
+	// Parse PSYNC response - handle both string and bulk string responses
+	responseStr := response.String()
+	c.logger.Debug("PSYNC response received", "response", responseStr)
+	
+	parts := strings.Fields(responseStr)
 	if len(parts) < 3 {
-		return fmt.Errorf("invalid PSYNC response: %s", response.String())
+		return fmt.Errorf("invalid PSYNC response: %s", responseStr)
 	}
 
 	if parts[0] == "FULLRESYNC" {
@@ -440,12 +469,14 @@ func (c *Client) performSync() error {
 		}
 		c.replOffset = offset
 
+		c.logger.Debug("Full resync initiated", "repl_id", c.replID, "offset", c.replOffset)
+
 		// Perform full sync
 		if err := c.performFullSync(); err != nil {
 			return err
 		}
 	} else {
-		return fmt.Errorf("unsupported PSYNC response: %s", response.String())
+		return fmt.Errorf("unsupported PSYNC response: %s", responseStr)
 	}
 
 	syncDuration := time.Since(startTime)
@@ -470,10 +501,6 @@ func (c *Client) performSync() error {
 	}
 
 	c.logger.Info("Initial synchronization completed", "duration", syncDuration)
-	
-	// Add stabilization delay to ensure connection is ready for command streaming
-	// This prevents protocol desynchronization issues when transitioning from RDB to commands
-	time.Sleep(100 * time.Millisecond)
 	
 	return nil
 }
@@ -557,61 +584,97 @@ func (c *Client) performFullSync() error {
 func (c *Client) streamCommands() error {
 	c.logger.Debug("Starting command streaming")
 	
-	// Ensure we have a clean reader state for command streaming
-	// This prevents protocol desynchronization after RDB parsing
+	// Ensure reader state is clean for command streaming after RDB parsing
+	// This is critical to prevent protocol desynchronization
 	c.mu.Lock()
 	if c.conn != nil {
+		// Create a new reader to ensure clean state
 		c.reader = protocol.NewReader(c.conn)
+		c.logger.Debug("Created fresh reader for command streaming")
 	}
 	c.mu.Unlock()
 	
+	// Add a brief stabilization delay after reader reset
+	time.Sleep(50 * time.Millisecond)
+	
 	protocolErrorCount := 0
-	maxProtocolErrors := 5 // Allow a few protocol errors before reconnecting
+	maxProtocolErrors := 3 // Reduced threshold for faster reconnection
+	consecutiveSuccesses := 0
 
 	for {
 		select {
 		case <-c.stopChan:
 			return nil
 		default:
-			// Read next command with timeout to prevent hanging
+			// Read next command with enhanced error handling
 			value, err := c.reader.ReadNext()
 			if err != nil {
 				if err == io.EOF {
 					return fmt.Errorf("connection closed")
 				}
 				
-				// For protocol errors during streaming, count them and reconnect if too many
-				if strings.Contains(err.Error(), "unknown RESP type") ||
-					strings.Contains(err.Error(), "expected CRLF terminator") ||
-					strings.Contains(err.Error(), "expected bulk string") ||
-					strings.Contains(err.Error(), "empty byte") {
-					
+				// Handle protocol errors with categorization
+				if isProtocolError(err) {
 					protocolErrorCount++
-					c.logger.Debug("Protocol error during streaming", "error", err, "count", protocolErrorCount)
+					consecutiveSuccesses = 0 // Reset success counter
 					
-					// If we get too many protocol errors in a row, the connection is likely desynchronized
+					c.logger.Debug("Protocol error during streaming", 
+						"error", err, 
+						"count", protocolErrorCount,
+						"max", maxProtocolErrors)
+					
+					// If we get too many consecutive protocol errors, reconnect
 					if protocolErrorCount >= maxProtocolErrors {
-						c.logger.Error("Too many protocol errors, reconnecting", "count", protocolErrorCount)
+						c.logger.Error("Too many consecutive protocol errors, triggering reconnection", 
+							"count", protocolErrorCount,
+							"error", err)
 						return fmt.Errorf("protocol desynchronization detected after %d errors: %w", protocolErrorCount, err)
 					}
 					
-					// Add a small delay to prevent tight loop
-					time.Sleep(10 * time.Millisecond)
+					// Add progressive delay for protocol errors
+					delay := time.Duration(protocolErrorCount) * 50 * time.Millisecond
+					if delay > 500*time.Millisecond {
+						delay = 500 * time.Millisecond
+					}
+					
+					select {
+					case <-time.After(delay):
+					case <-c.stopChan:
+						return nil
+					}
 					continue
 				}
+				
+				// For non-protocol errors, fail immediately
 				return fmt.Errorf("read command failed: %w", err)
 			}
 
-			// Reset error count on successful read
+			// Reset error count on successful read and track consecutive successes
+			if protocolErrorCount > 0 {
+				c.logger.Debug("Successfully recovered from protocol errors", "previous_errors", protocolErrorCount)
+			}
 			protocolErrorCount = 0
+			consecutiveSuccesses++
 
 			// Process command
 			if err := c.processCommand(value); err != nil {
 				c.logger.Error("Command processing failed", "error", err)
+				// Don't fail on command processing errors, just log and continue
 				continue
 			}
 		}
 	}
+}
+
+// isProtocolError checks if an error is a protocol-level error that might be recoverable
+func isProtocolError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, "unknown RESP type") ||
+		strings.Contains(errStr, "expected CRLF terminator") ||
+		strings.Contains(errStr, "expected bulk string") ||
+		strings.Contains(errStr, "empty byte") ||
+		strings.Contains(errStr, "invalid length") ||
+		strings.Contains(errStr, "protocol error")
 }
 
 
@@ -765,15 +828,24 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 	// Skip key if current database is not allowed
 	if len(h.databases) > 0 {
 		if _, allowed := h.databases[h.currentDB]; !allowed {
+			h.logger.Debug("Skipping key in non-replicated database", "key", string(key), "db", h.currentDB)
 			return nil // Skip key in non-replicated database
 		}
 	}
 
+	h.logger.Debug("Processing RDB key", "key", string(key), "type", fmt.Sprintf("%T", value), "db", h.currentDB)
+
 	switch v := value.(type) {
 	case []byte:
-		return h.storage.Set(string(key), v, expiry)
+		err := h.storage.Set(string(key), v, expiry)
+		if err != nil {
+			h.logger.Error("Failed to set key in storage", "key", string(key), "error", err)
+			return err
+		}
+		h.logger.Debug("Successfully stored RDB key", "key", string(key), "value_len", len(v))
+		return nil
 	default:
-		h.logger.Debug("Unsupported RDB value type", "type", fmt.Sprintf("%T", value))
+		h.logger.Debug("Unsupported RDB value type", "key", string(key), "type", fmt.Sprintf("%T", value))
 		return nil
 	}
 }

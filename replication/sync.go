@@ -4,10 +4,39 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
+
+// Global sync coordination to prevent multiple managers from starting concurrently
+var globalSyncCoordinator = &syncCoordinator{
+	activeSyncs: make(map[string]bool),
+}
+
+type syncCoordinator struct {
+	mu          sync.Mutex
+	activeSyncs map[string]bool // masterAddr -> active
+}
+
+func (sc *syncCoordinator) tryAcquire(masterAddr string) bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	
+	if sc.activeSyncs[masterAddr] {
+		return false // Already active
+	}
+	
+	sc.activeSyncs[masterAddr] = true
+	return true
+}
+
+func (sc *syncCoordinator) release(masterAddr string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	delete(sc.activeSyncs, masterAddr)
+}
 
 // SyncManager manages synchronization between master and replica
 type SyncManager struct {
@@ -18,7 +47,7 @@ type SyncManager struct {
 	mu              sync.RWMutex
 	initialSyncDone bool
 	syncCallbacks   []func()
-	starting        bool // flag to prevent concurrent Start calls
+	starting        int32 // atomic flag to prevent concurrent Start calls
 
 	// Configuration
 	maxRetries int
@@ -102,20 +131,22 @@ func (sm *SyncManager) SetDatabases(databases []int) {
 
 // Start begins synchronization
 func (sm *SyncManager) Start(ctx context.Context) error {
-	sm.mu.Lock()
-	if sm.starting {
-		sm.mu.Unlock()
-		sm.client.logger.Debug("Sync already starting, skipping duplicate Start call")
+	// Use atomic check and set to prevent concurrent start operations
+	if !atomic.CompareAndSwapInt32(&sm.starting, 0, 1) {
+		sm.client.logger.Debug("Sync manager start already in progress, skipping duplicate Start call")
 		return nil
 	}
-	sm.starting = true
-	sm.mu.Unlock()
+	
+	defer atomic.StoreInt32(&sm.starting, 0)
 
-	defer func() {
-		sm.mu.Lock()
-		sm.starting = false
-		sm.mu.Unlock()
-	}()
+	// Try to acquire global sync lock for this master
+	masterAddr := sm.client.masterAddr
+	if !globalSyncCoordinator.tryAcquire(masterAddr) {
+		sm.client.logger.Debug("Another sync manager is already active for this master, skipping")
+		return nil
+	}
+	
+	defer globalSyncCoordinator.release(masterAddr)
 
 	// Register sync completion callback
 	sm.client.OnSyncComplete(func() {
@@ -136,6 +167,8 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 	for i := 0; i < sm.maxRetries; i++ {
 		if err := sm.client.Start(ctx); err != nil {
 			lastErr = err
+			sm.client.logger.Debug("Sync start attempt failed", "attempt", i+1, "error", err)
+			
 			if i < sm.maxRetries-1 {
 				select {
 				case <-time.After(sm.retryDelay):
@@ -145,6 +178,7 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 				}
 			}
 		} else {
+			sm.client.logger.Debug("Sync manager started successfully", "attempt", i+1)
 			return nil
 		}
 	}

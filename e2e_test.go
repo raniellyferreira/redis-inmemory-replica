@@ -233,6 +233,15 @@ func TestRDBParsingRobustness(t *testing.T) {
 			t.Errorf("Failed to set key %s: %v", key, err)
 		}
 	}
+	
+	// Force Redis to persist data to RDB before starting replication
+	// This ensures all test data is available during full sync
+	if err := forcePersistRedis(redisAddr); err != nil {
+		t.Errorf("Failed to force Redis persistence: %v", err)
+	}
+	
+	// Small delay to ensure persistence is complete
+	time.Sleep(100 * time.Millisecond)
 
 	// Create replica and test full sync
 	replica, err := redisreplica.New(
@@ -389,6 +398,30 @@ func deleteRedisKey(addr, key string) error {
 	// Send DEL command
 	cmd := fmt.Sprintf("DEL %s\r\n", key)
 	_, err = conn.Write([]byte(cmd))
+	if err != nil {
+		return err
+	}
+
+	// Read response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func forcePersistRedis(addr string) error {
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Send BGSAVE command to force background save
+	_, err = conn.Write([]byte("BGSAVE\r\n"))
 	if err != nil {
 		return err
 	}
