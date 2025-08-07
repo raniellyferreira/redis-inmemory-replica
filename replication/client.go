@@ -391,6 +391,9 @@ func (c *Client) performSync() error {
 	// Read PSYNC response
 	response, err := c.reader.ReadNext()
 	if err != nil {
+		if err == io.EOF {
+			return fmt.Errorf("PSYNC response failed: connection closed by server")
+		}
 		return fmt.Errorf("PSYNC response failed: %w", err)
 	}
 
@@ -473,7 +476,7 @@ func (c *Client) performFullSync() error {
 
 	// Read RDB data as streaming bulk string
 	c.logger.Debug("Reading RDB data stream")
-	err := c.reader.ReadBulkString(func(chunk []byte) error {
+	err := c.reader.ReadBulkStringForReplication(func(chunk []byte) error {
 		if chunk == nil {
 			c.logger.Debug("Received null RDB chunk")
 			return nil

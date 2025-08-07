@@ -57,7 +57,10 @@ func (r *Reader) ReadNext() (Value, error) {
 	case TypeArray:
 		return r.readArray()
 	default:
-		return Value{}, fmt.Errorf("unknown RESP type: %c", typeByte)
+		if typeByte == 0 {
+			return Value{}, fmt.Errorf("unknown RESP type: empty byte (connection may be closed)")
+		}
+		return Value{}, fmt.Errorf("unknown RESP type: %c (0x%02x)", typeByte, typeByte)
 	}
 }
 
@@ -247,6 +250,67 @@ func (r *Reader) ReadBulkString(fn func(chunk []byte) error) error {
 
 	// Read and validate CRLF
 	return r.expectCRLF()
+}
+
+// ReadBulkStringForReplication reads a bulk string for replication context.
+// This is specifically for RDB data in replication where there's no CRLF after the data.
+func (r *Reader) ReadBulkStringForReplication(fn func(chunk []byte) error) error {
+	// Read the '$' type byte if not already read
+	typeByte, err := r.br.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	if ValueType(typeByte) != TypeBulkString {
+		return fmt.Errorf("expected bulk string, got %c", typeByte)
+	}
+
+	// Read length
+	line, err := r.readLine()
+	if err != nil {
+		return err
+	}
+
+	length, err := strconv.ParseInt(string(line), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid bulk string length: %s", line)
+	}
+
+	// Handle null bulk string
+	if length == -1 {
+		return fn(nil)
+	}
+
+	// Validate length
+	if length < 0 || length > maxBulkSize {
+		return fmt.Errorf("invalid bulk string length: %d", length)
+	}
+
+	// Read data in chunks
+	const chunkSize = 8192
+	buffer := make([]byte, chunkSize)
+	remaining := length
+
+	for remaining > 0 {
+		toRead := chunkSize
+		if remaining < int64(chunkSize) {
+			toRead = int(remaining)
+		}
+
+		n, err := io.ReadFull(r.br, buffer[:toRead])
+		if err != nil {
+			return err
+		}
+
+		if err := fn(buffer[:n]); err != nil {
+			return err
+		}
+
+		remaining -= int64(n)
+	}
+
+	// No CRLF expected after RDB data in replication context
+	return nil
 }
 
 // Skip skips the next RESP value without parsing it completely
