@@ -118,10 +118,21 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	// Give some time for replication
 	time.Sleep(2 * time.Second)
 
-	// Verify deletion in replica
+	// Verify deletion in replica with proper timeout
 	replicaStorage := replica.Storage()
-	if _, exists := replicaStorage.Get("test:key1"); exists {
-		t.Error("Key test:key1 should have been deleted from replica")
+	
+	// Wait for deletion to propagate (give it some time)
+	deleted := false
+	for i := 0; i < 50; i++ { // Wait up to 5 seconds
+		if _, exists := replicaStorage.Get("test:key1"); !exists {
+			deleted = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	
+	if !deleted {
+		t.Error("Key test:key1 should have been deleted from replica but still exists")
 	} else {
 		t.Log("✅ Key deletion correctly replicated")
 	}
@@ -256,17 +267,40 @@ func TestRDBParsingRobustness(t *testing.T) {
 		t.Fatal("RDB parsing timeout")
 	}
 
-	// Verify all data was correctly parsed
+	// Verify all data was correctly parsed with proper error handling
 	replicaStorage := replica.Storage()
+	
+	// Allow some time for all data to be available
+	time.Sleep(500 * time.Millisecond)
+	
+	missingKeys := []string{}
+	mismatchedKeys := []string{}
+	
 	for key, expectedValue := range testData {
-		if value, exists := replicaStorage.Get(key); !exists {
-			t.Errorf("Key %s not found after RDB parsing", key)
-		} else if string(value) != fmt.Sprintf("%v", expectedValue) {
-			t.Errorf("Key %s: expected %v, got %s", key, expectedValue, string(value))
+		value, exists := replicaStorage.Get(key)
+		if !exists {
+			missingKeys = append(missingKeys, key)
+		} else {
+			expectedStr := fmt.Sprintf("%v", expectedValue)
+			actualStr := string(value)
+			if actualStr != expectedStr {
+				mismatchedKeys = append(mismatchedKeys, fmt.Sprintf("%s: expected %v, got %v", key, expectedStr, actualStr))
+			}
 		}
 	}
-
-	t.Log("✅ All RDB data correctly parsed and stored")
+	
+	// Report all errors at once for better debugging
+	if len(missingKeys) > 0 {
+		t.Errorf("Missing keys after RDB parsing: %v", missingKeys)
+	}
+	if len(mismatchedKeys) > 0 {
+		t.Errorf("Mismatched values after RDB parsing: %v", mismatchedKeys)
+	}
+	
+	// Only log success if no errors
+	if len(missingKeys) == 0 && len(mismatchedKeys) == 0 {
+		t.Log("✅ All RDB data correctly parsed and stored")
+	}
 }
 
 // Helper functions

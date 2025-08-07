@@ -19,9 +19,21 @@ check_redis() {
     local port=$(echo "$addr" | cut -d':' -f2)
     
     # Handle case where port might not be specified (no colon in address)
-    if [[ "$addr" != *":"* ]]; then
+    # Also handle IPv6 addresses like [::1]:6379
+    if [[ "$addr" == "["*"]:"* ]]; then
+        # IPv6 with port: [::1]:6379
+        host="${addr%:*}"  # Remove :port part
+        host="${host#[}"   # Remove leading [
+        host="${host%]}"   # Remove trailing ]
+        port="${addr##*:}" # Get port part
+    elif [[ "$addr" != *":"* ]]; then
+        # No colon, assume default port
         host="$addr"
         port="6379"
+    else
+        # IPv4 with port: localhost:6379
+        host="${addr%:*}"
+        port="${addr##*:}"
     fi
     
     local redis_cmd="redis-cli -h $host -p $port"
@@ -39,7 +51,13 @@ check_redis() {
     
     # Try to ping Redis and check for PONG response with timeout
     local result
-    result=$(timeout 5 eval "$redis_cmd ping" 2>/dev/null)
+    if command -v timeout >/dev/null 2>&1; then
+        # Use timeout command if available
+        result=$(timeout 5 eval "$redis_cmd ping" 2>/dev/null)
+    else
+        # Fallback without timeout for systems that don't have it
+        result=$(eval "$redis_cmd ping" 2>/dev/null)
+    fi
     [[ "$result" == "PONG" ]]
 }
 

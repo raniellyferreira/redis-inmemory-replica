@@ -18,6 +18,7 @@ type SyncManager struct {
 	mu              sync.RWMutex
 	initialSyncDone bool
 	syncCallbacks   []func()
+	starting        bool // flag to prevent concurrent Start calls
 
 	// Configuration
 	maxRetries int
@@ -101,6 +102,21 @@ func (sm *SyncManager) SetDatabases(databases []int) {
 
 // Start begins synchronization
 func (sm *SyncManager) Start(ctx context.Context) error {
+	sm.mu.Lock()
+	if sm.starting {
+		sm.mu.Unlock()
+		sm.client.logger.Debug("Sync already starting, skipping duplicate Start call")
+		return nil
+	}
+	sm.starting = true
+	sm.mu.Unlock()
+
+	defer func() {
+		sm.mu.Lock()
+		sm.starting = false
+		sm.mu.Unlock()
+	}()
+
 	// Register sync completion callback
 	sm.client.OnSyncComplete(func() {
 		sm.mu.Lock()

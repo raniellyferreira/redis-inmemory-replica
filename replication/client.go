@@ -44,6 +44,10 @@ type Client struct {
 	stopped  int32 // atomic flag to prevent double stop
 	runEnded int32 // atomic flag to prevent double doneChan close
 
+	// Sync control
+	syncMu  sync.Mutex // mutex for sync operations
+	syncing int32      // atomic flag indicating sync is in progress
+
 	// Statistics
 	stats *ReplicationStats
 
@@ -394,6 +398,13 @@ func (c *Client) authenticate() error {
 
 // performSync performs initial synchronization
 func (c *Client) performSync() error {
+	// Use atomic check and set to prevent concurrent sync operations
+	if !atomic.CompareAndSwapInt32(&c.syncing, 0, 1) {
+		c.logger.Debug("Sync already in progress, skipping")
+		return nil
+	}
+	defer atomic.StoreInt32(&c.syncing, 0)
+
 	c.logger.Info("Starting initial synchronization")
 	startTime := time.Now()
 
