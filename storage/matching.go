@@ -113,22 +113,22 @@ func matchPatternRegex(str, pattern string) bool {
 	if pattern == "*" && str == "" {
 		return false
 	}
-	
+
 	// Handle empty pattern
 	if pattern == "" {
 		return str == ""
 	}
-	
+
 	// Convert glob pattern to regex pattern
 	regexPattern := globToRegex(pattern)
-	
+
 	// Compile and match
 	regex, err := regexp.Compile("^" + regexPattern + "$")
 	if err != nil {
 		// Fallback to simple strategy on regex compilation error
 		return matchPatternSimple(str, pattern)
 	}
-	
+
 	return regex.MatchString(str)
 }
 
@@ -158,11 +158,11 @@ func matchPatternAutomaton(str, pattern string) bool {
 	if pattern == "" {
 		return str == ""
 	}
-	
+
 	if pattern == "*" {
 		return str != ""
 	}
-	
+
 	// Use a simple recursive approach with memoization for automaton-like behavior
 	return matchAutomaton(str, pattern, 0, 0, make(map[[2]int]bool))
 }
@@ -174,14 +174,14 @@ func matchAutomaton(str, pattern string, strIdx, patIdx int, memo map[[2]int]boo
 	if result, exists := memo[key]; exists {
 		return result
 	}
-	
+
 	// Base cases
 	if patIdx == len(pattern) {
 		result := strIdx == len(str)
 		memo[key] = result
 		return result
 	}
-	
+
 	if strIdx == len(str) {
 		// Check if remaining pattern is all wildcards
 		for i := patIdx; i < len(pattern); i++ {
@@ -193,17 +193,17 @@ func matchAutomaton(str, pattern string, strIdx, patIdx int, memo map[[2]int]boo
 		memo[key] = true
 		return true
 	}
-	
+
 	// Current pattern character
 	patChar := pattern[patIdx]
 	strChar := str[strIdx]
-	
+
 	var result bool
-	
+
 	if patChar == '*' {
 		// Try matching zero characters (move pattern index)
 		result = matchAutomaton(str, pattern, strIdx, patIdx+1, memo)
-		
+
 		// Try matching one or more characters (move string index)
 		if !result {
 			result = matchAutomaton(str, pattern, strIdx+1, patIdx, memo)
@@ -215,12 +215,10 @@ func matchAutomaton(str, pattern string, strIdx, patIdx int, memo map[[2]int]boo
 		// No match
 		result = false
 	}
-	
+
 	memo[key] = result
 	return result
 }
-
-
 
 // matchPatternGlob implements pattern matching using Go's standard library
 func matchPatternGlob(str, pattern string) bool {
@@ -228,12 +226,12 @@ func matchPatternGlob(str, pattern string) bool {
 	if pattern == "*" && str == "" {
 		return false
 	}
-	
+
 	// Handle empty pattern
 	if pattern == "" {
 		return str == ""
 	}
-	
+
 	matched, err := filepath.Match(pattern, str)
 	if err != nil {
 		// Fallback to simple strategy on error

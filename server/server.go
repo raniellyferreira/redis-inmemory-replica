@@ -19,39 +19,39 @@ import (
 type Server struct {
 	storage storage.Storage
 	lua     *lua.Engine
-	
+
 	// Server configuration
 	addr     string
 	password string
-	
+
 	// Connection management
 	listener net.Listener
 	clients  sync.Map // map[net.Conn]*Client
-	
+
 	// Control
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	
+
 	// Metrics
-	connCount     int64
-	commandCount  int64
-	errorCount    int64
-	mu            sync.RWMutex
+	connCount    int64
+	commandCount int64
+	errorCount   int64
+	mu           sync.RWMutex
 }
 
 // Client represents a connected Redis client
 type Client struct {
-	conn     net.Conn
-	reader   *protocol.Reader
-	writer   *protocol.Writer
-	server   *Server
-	
+	conn   net.Conn
+	reader *protocol.Reader
+	writer *protocol.Writer
+	server *Server
+
 	// Client state
 	authenticated bool
-	db           int
-	lastCmd      time.Time
-	
+	db            int
+	lastCmd       time.Time
+
 	// Control
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -60,7 +60,7 @@ type Client struct {
 // NewServer creates a new Redis protocol server
 func NewServer(addr string, storage storage.Storage) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	return &Server{
 		storage: storage,
 		lua:     lua.NewEngine(storage),
@@ -85,18 +85,18 @@ func (s *Server) Start() error {
 
 	s.wg.Add(1)
 	go s.acceptConnections()
-	
+
 	return nil
 }
 
 // Stop stops the Redis server
 func (s *Server) Stop() error {
 	s.cancel()
-	
+
 	if s.listener != nil {
 		s.listener.Close()
 	}
-	
+
 	// Close all client connections
 	s.clients.Range(func(key, value interface{}) bool {
 		if client, ok := value.(*Client); ok {
@@ -104,7 +104,7 @@ func (s *Server) Stop() error {
 		}
 		return true
 	})
-	
+
 	s.wg.Wait()
 	return nil
 }
@@ -121,13 +121,13 @@ func (s *Server) Addr() string {
 func (s *Server) Stats() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	clientCount := 0
 	s.clients.Range(func(key, value interface{}) bool {
 		clientCount++
 		return true
 	})
-	
+
 	return map[string]interface{}{
 		"connected_clients": clientCount,
 		"total_commands":    s.commandCount,
@@ -139,14 +139,14 @@ func (s *Server) Stats() map[string]interface{} {
 // acceptConnections accepts new client connections
 func (s *Server) acceptConnections() {
 	defer s.wg.Done()
-	
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		default:
 		}
-		
+
 		conn, err := s.listener.Accept()
 		if err != nil {
 			if s.ctx.Err() != nil {
@@ -154,7 +154,7 @@ func (s *Server) acceptConnections() {
 			}
 			continue
 		}
-		
+
 		s.handleNewClient(conn)
 	}
 }
@@ -164,7 +164,7 @@ func (s *Server) handleNewClient(conn net.Conn) {
 	s.mu.Lock()
 	s.connCount++
 	s.mu.Unlock()
-	
+
 	ctx, cancel := context.WithCancel(s.ctx)
 	client := &Client{
 		conn:          conn,
@@ -176,9 +176,9 @@ func (s *Server) handleNewClient(conn net.Conn) {
 		ctx:           ctx,
 		cancel:        cancel,
 	}
-	
+
 	s.clients.Store(conn, client)
-	
+
 	s.wg.Add(1)
 	go client.handle()
 }
@@ -194,17 +194,17 @@ func (c *Client) Close() {
 func (c *Client) handle() {
 	defer c.server.wg.Done()
 	defer c.Close()
-	
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
 		}
-		
+
 		// Set read deadline
 		c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-		
+
 		value, err := c.reader.ReadNext()
 		if err != nil {
 			if err == io.EOF {
@@ -216,13 +216,13 @@ func (c *Client) handle() {
 			c.writeError(fmt.Sprintf("Protocol error: %v", err))
 			return
 		}
-		
+
 		cmd, err := protocol.ParseCommand(value)
 		if err != nil {
 			c.writeError(fmt.Sprintf("Protocol error: %v", err))
 			continue
 		}
-		
+
 		c.lastCmd = time.Now()
 		c.executeCommand(cmd)
 	}
@@ -233,13 +233,13 @@ func (c *Client) executeCommand(cmd *protocol.Command) {
 	c.server.mu.Lock()
 	c.server.commandCount++
 	c.server.mu.Unlock()
-	
+
 	// Check authentication first
 	if !c.authenticated && strings.ToUpper(cmd.Name) != "AUTH" {
 		c.writeError("NOAUTH Authentication required")
 		return
 	}
-	
+
 	switch strings.ToUpper(cmd.Name) {
 	case "AUTH":
 		c.handleAuth(cmd)
@@ -278,12 +278,12 @@ func (c *Client) handleAuth(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'auth' command")
 		return
 	}
-	
+
 	if c.server.password == "" {
 		c.writeError("ERR Client sent AUTH, but no password is set")
 		return
 	}
-	
+
 	if string(cmd.Args[0]) == c.server.password {
 		c.authenticated = true
 		c.writeString("OK")
@@ -307,18 +307,18 @@ func (c *Client) handleSelect(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'select' command")
 		return
 	}
-	
+
 	db, err := strconv.Atoi(string(cmd.Args[0]))
 	if err != nil {
 		c.writeError("ERR invalid DB index")
 		return
 	}
-	
+
 	if err := c.server.storage.SelectDB(db); err != nil {
 		c.writeError(fmt.Sprintf("ERR %v", err))
 		return
 	}
-	
+
 	c.db = db
 	c.writeString("OK")
 }
@@ -328,7 +328,7 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'get' command")
 		return
 	}
-	
+
 	value, exists := c.server.storage.Get(string(cmd.Args[0]))
 	if !exists {
 		c.writeNull()
@@ -342,18 +342,18 @@ func (c *Client) handleSet(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'set' command")
 		return
 	}
-	
+
 	key := string(cmd.Args[0])
 	value := cmd.Args[1]
-	
+
 	// TODO: Handle SET options (EX, PX, NX, XX, etc.)
-	
+
 	err := c.server.storage.Set(key, value, nil)
 	if err != nil {
 		c.writeError(fmt.Sprintf("ERR %v", err))
 		return
 	}
-	
+
 	c.writeString("OK")
 }
 
@@ -362,12 +362,12 @@ func (c *Client) handleDel(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'del' command")
 		return
 	}
-	
+
 	keys := make([]string, len(cmd.Args))
 	for i, arg := range cmd.Args {
 		keys[i] = string(arg)
 	}
-	
+
 	deleted := c.server.storage.Del(keys...)
 	c.writeInteger(deleted)
 }
@@ -377,12 +377,12 @@ func (c *Client) handleExists(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'exists' command")
 		return
 	}
-	
+
 	keys := make([]string, len(cmd.Args))
 	for i, arg := range cmd.Args {
 		keys[i] = string(arg)
 	}
-	
+
 	count := c.server.storage.Exists(keys...)
 	c.writeInteger(count)
 }
@@ -392,7 +392,7 @@ func (c *Client) handleType(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'type' command")
 		return
 	}
-	
+
 	valueType := c.server.storage.Type(string(cmd.Args[0]))
 	c.writeString(valueType.String())
 }
@@ -402,35 +402,35 @@ func (c *Client) handleEval(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'eval' command")
 		return
 	}
-	
+
 	script := string(cmd.Args[0])
 	numKeys, err := strconv.Atoi(string(cmd.Args[1]))
 	if err != nil {
 		c.writeError("ERR value is not an integer or out of range")
 		return
 	}
-	
+
 	if numKeys < 0 || len(cmd.Args) < 2+numKeys {
 		c.writeError("ERR Number of keys can't be negative or greater than args")
 		return
 	}
-	
+
 	keys := make([]string, numKeys)
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(cmd.Args[2+i])
 	}
-	
+
 	args := make([]string, len(cmd.Args)-2-numKeys)
 	for i := 0; i < len(args); i++ {
 		args[i] = string(cmd.Args[2+numKeys+i])
 	}
-	
+
 	result, err := c.server.lua.Eval(script, keys, args)
 	if err != nil {
 		c.writeError(fmt.Sprintf("ERR %v", err))
 		return
 	}
-	
+
 	c.writeResult(result)
 }
 
@@ -439,35 +439,35 @@ func (c *Client) handleEvalSHA(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'evalsha' command")
 		return
 	}
-	
+
 	sha := string(cmd.Args[0])
 	numKeys, err := strconv.Atoi(string(cmd.Args[1]))
 	if err != nil {
 		c.writeError("ERR value is not an integer or out of range")
 		return
 	}
-	
+
 	if numKeys < 0 || len(cmd.Args) < 2+numKeys {
 		c.writeError("ERR Number of keys can't be negative or greater than args")
 		return
 	}
-	
+
 	keys := make([]string, numKeys)
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(cmd.Args[2+i])
 	}
-	
+
 	args := make([]string, len(cmd.Args)-2-numKeys)
 	for i := 0; i < len(args); i++ {
 		args[i] = string(cmd.Args[2+numKeys+i])
 	}
-	
+
 	result, err := c.server.lua.EvalSHA(sha, keys, args)
 	if err != nil {
 		c.writeError(fmt.Sprintf("ERR %v", err))
 		return
 	}
-	
+
 	c.writeResult(result)
 }
 
@@ -476,9 +476,9 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 		c.writeError("ERR wrong number of arguments for 'script' command")
 		return
 	}
-	
+
 	subCmd := strings.ToUpper(string(cmd.Args[0]))
-	
+
 	switch subCmd {
 	case "LOAD":
 		if len(cmd.Args) != 2 {
@@ -487,7 +487,7 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 		}
 		sha := c.server.lua.LoadScript(string(cmd.Args[1]))
 		c.writeString(sha)
-		
+
 	case "EXISTS":
 		if len(cmd.Args) < 2 {
 			c.writeError("ERR wrong number of arguments for 'script exists' command")
@@ -498,7 +498,7 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 			hashes[i-1] = string(cmd.Args[i])
 		}
 		results := c.server.lua.ScriptExists(hashes)
-		
+
 		array := make([]interface{}, len(results))
 		for i, exists := range results {
 			if exists {
@@ -508,7 +508,7 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 			}
 		}
 		c.writeArray(array)
-		
+
 	case "FLUSH":
 		if len(cmd.Args) != 1 {
 			c.writeError("ERR wrong number of arguments for 'script flush' command")
@@ -516,7 +516,7 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 		}
 		c.server.lua.ScriptFlush()
 		c.writeString("OK")
-		
+
 	default:
 		c.writeError(fmt.Sprintf("ERR unknown SCRIPT subcommand '%s'", subCmd))
 	}

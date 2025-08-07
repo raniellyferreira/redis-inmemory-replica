@@ -348,7 +348,7 @@ func BenchmarkMemoryStorageSet(b *testing.B) {
 	defer s.Close()
 
 	value := []byte("value")
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s.Set("key", value, nil)
@@ -450,7 +450,7 @@ func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 
 	const numGoroutines = 10
 	const operationsPerGoroutine = 100
-	
+
 	var wg sync.WaitGroup
 	errorChan := make(chan error, numGoroutines*operationsPerGoroutine)
 
@@ -461,14 +461,14 @@ func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < operationsPerGoroutine; j++ {
 				key := fmt.Sprintf("key_%d_%d", workerID, j)
-				
+
 				// Set a key
 				err := s.Set(key, []byte("value"), nil)
 				if err != nil {
 					errorChan <- fmt.Errorf("Set error: %v", err)
 					return
 				}
-				
+
 				// Read the key back
 				value, exists := s.Get(key)
 				if !exists {
@@ -490,7 +490,7 @@ func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < operationsPerGoroutine; j++ {
 				key := fmt.Sprintf("expiring_key_%d_%d", workerID, j)
-				
+
 				// Set key with short expiry
 				expiry := time.Now().Add(10 * time.Millisecond)
 				err := s.Set(key, []byte("expiring_value"), &expiry)
@@ -498,7 +498,7 @@ func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 					errorChan <- fmt.Errorf("Set expiring key error: %v", err)
 					return
 				}
-				
+
 				// Small delay to allow some keys to expire
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -517,10 +517,10 @@ func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 // Test cleanup under different load scenarios
 func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 	scenarios := []struct {
-		name           string
-		numKeys        int
-		expiredRatio   float64
-		config         storage.CleanupConfig
+		name         string
+		numKeys      int
+		expiredRatio float64
+		config       storage.CleanupConfig
 	}{
 		{
 			name:         "Light load",
@@ -554,14 +554,14 @@ func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 			defer s.Close()
 
 			s.SetCleanupConfig(scenario.config)
-			
+
 			// Small delay to ensure storage is fully initialized
 			time.Sleep(10 * time.Millisecond)
 
 			now := time.Now()
 			pastTime := now.Add(-1 * time.Hour)
 			futureTime := now.Add(1 * time.Hour)
-			
+
 			// Create a far future time for setup - will set to expired later
 			setupTime := now.Add(24 * time.Hour)
 
@@ -611,7 +611,7 @@ func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 			// Check that some cleanup occurred
 			finalKeyCount := s.KeyCount()
 			t.Logf("Scenario %s: keys reduced from %d to %d", scenario.name, initialKeyCount, finalKeyCount)
-			
+
 			// Verify all valid keys still exist
 			validKeysFound := 0
 			for i := 0; i < numValid; i++ {

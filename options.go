@@ -11,25 +11,25 @@ type config struct {
 	masterAddr     string
 	masterPassword string
 	masterTLS      *tls.Config
-	
+
 	// Replica server settings
 	replicaAddr     string
 	replicaPassword string
-	
+
 	// Database selection
 	databases []int // Which databases to replicate (empty = all)
-	
+
 	// Timeouts and limits
-	syncTimeout      time.Duration
-	connectTimeout   time.Duration
-	readTimeout      time.Duration
-	writeTimeout     time.Duration
-	maxMemory        int64
-	
+	syncTimeout    time.Duration
+	connectTimeout time.Duration
+	readTimeout    time.Duration
+	writeTimeout   time.Duration
+	maxMemory      int64
+
 	// Observability
-	logger    Logger
-	metrics   MetricsCollector
-	
+	logger  Logger
+	metrics MetricsCollector
+
 	// Behavioral options
 	readOnly       bool
 	enableServer   bool
@@ -60,8 +60,9 @@ type Option func(*config) error
 // WithMaster sets the master Redis server address
 //
 // Example:
-//   WithMaster("redis.example.com:6379")
-//   WithMaster("localhost:6379")
+//
+//	WithMaster("redis.example.com:6379")
+//	WithMaster("localhost:6379")
 func WithMaster(addr string) Option {
 	return func(c *config) error {
 		if addr == "" {
@@ -78,7 +79,8 @@ func WithMaster(addr string) Option {
 // WithMasterAuth sets authentication credentials for the master connection
 //
 // Example:
-//   WithMasterAuth("mypassword")
+//
+//	WithMasterAuth("mypassword")
 func WithMasterAuth(password string) Option {
 	return func(c *config) error {
 		c.masterPassword = password
@@ -89,8 +91,9 @@ func WithMasterAuth(password string) Option {
 // WithReplicaAddr sets the local replica server address
 //
 // Example:
-//   WithReplicaAddr(":6380")
-//   WithReplicaAddr("0.0.0.0:6380")
+//
+//	WithReplicaAddr(":6380")
+//	WithReplicaAddr("0.0.0.0:6380")
 func WithReplicaAddr(addr string) Option {
 	return func(c *config) error {
 		c.replicaAddr = addr
@@ -101,7 +104,8 @@ func WithReplicaAddr(addr string) Option {
 // WithSyncTimeout sets the initial synchronization timeout
 //
 // Example:
-//   WithSyncTimeout(60 * time.Second)
+//
+//	WithSyncTimeout(60 * time.Second)
 func WithSyncTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
@@ -115,7 +119,8 @@ func WithSyncTimeout(timeout time.Duration) Option {
 // WithConnectTimeout sets the connection timeout for master connection
 //
 // Example:
-//   WithConnectTimeout(10 * time.Second)
+//
+//	WithConnectTimeout(10 * time.Second)
 func WithConnectTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
@@ -129,7 +134,8 @@ func WithConnectTimeout(timeout time.Duration) Option {
 // WithReadTimeout sets the read timeout for network operations
 //
 // Example:
-//   WithReadTimeout(30 * time.Second)
+//
+//	WithReadTimeout(30 * time.Second)
 func WithReadTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
@@ -143,7 +149,8 @@ func WithReadTimeout(timeout time.Duration) Option {
 // WithWriteTimeout sets the write timeout for network operations
 //
 // Example:
-//   WithWriteTimeout(10 * time.Second)
+//
+//	WithWriteTimeout(10 * time.Second)
 func WithWriteTimeout(timeout time.Duration) Option {
 	return func(c *config) error {
 		if timeout <= 0 {
@@ -158,7 +165,8 @@ func WithWriteTimeout(timeout time.Duration) Option {
 // When set to 0, no limit is enforced
 //
 // Example:
-//   WithMaxMemory(1024 * 1024 * 1024) // 1GB limit
+//
+//	WithMaxMemory(1024 * 1024 * 1024) // 1GB limit
 func WithMaxMemory(bytes int64) Option {
 	return func(c *config) error {
 		if bytes < 0 {
@@ -172,7 +180,8 @@ func WithMaxMemory(bytes int64) Option {
 // WithLogger sets a custom logger for the replica
 //
 // Example:
-//   WithLogger(myCustomLogger)
+//
+//	WithLogger(myCustomLogger)
 func WithLogger(logger Logger) Option {
 	return func(c *config) error {
 		if logger == nil {
@@ -186,7 +195,8 @@ func WithLogger(logger Logger) Option {
 // WithMetrics enables metrics collection with the provided collector
 //
 // Example:
-//   WithMetrics(myMetricsCollector)
+//
+//	WithMetrics(myMetricsCollector)
 func WithMetrics(collector MetricsCollector) Option {
 	return func(c *config) error {
 		c.metrics = collector
@@ -197,10 +207,11 @@ func WithMetrics(collector MetricsCollector) Option {
 // WithTLS configures TLS for the master connection
 //
 // Example:
-//   config := &tls.Config{
-//     ServerName: "redis.example.com",
-//   }
-//   WithTLS(config)
+//
+//	config := &tls.Config{
+//	  ServerName: "redis.example.com",
+//	}
+//	WithTLS(config)
 func WithTLS(tlsConfig *tls.Config) Option {
 	return func(c *config) error {
 		c.masterTLS = tlsConfig
@@ -226,7 +237,8 @@ const (
 // environments. It enforces certificate verification and uses secure protocols.
 //
 // Example:
-//   WithSecureTLS("redis.example.com")
+//
+//	WithSecureTLS("redis.example.com")
 func WithSecureTLS(serverName string) Option {
 	return WithTLSEnvironment(serverName, TLSEnvironmentProduction)
 }
@@ -237,9 +249,10 @@ func WithSecureTLS(serverName string) Option {
 // and production environments with appropriate security settings for each.
 //
 // Examples:
-//   WithTLSEnvironment("redis.example.com", TLSEnvironmentProduction)  // Maximum security
-//   WithTLSEnvironment("redis.staging.com", TLSEnvironmentStaging)     // Balanced security
-//   WithTLSEnvironment("localhost", TLSEnvironmentDevelopment)         // Development friendly
+//
+//	WithTLSEnvironment("redis.example.com", TLSEnvironmentProduction)  // Maximum security
+//	WithTLSEnvironment("redis.staging.com", TLSEnvironmentStaging)     // Balanced security
+//	WithTLSEnvironment("localhost", TLSEnvironmentDevelopment)         // Development friendly
 func WithTLSEnvironment(serverName string, env TLSEnvironment) Option {
 	return func(c *config) error {
 		if serverName == "" {
@@ -314,10 +327,11 @@ func WithTLSEnvironment(serverName string, env TLSEnvironment) Option {
 // with sensible defaults that can be easily modified.
 //
 // Example:
-//   WithTLSCustom("redis.example.com").
-//     MinVersion(tls.VersionTLS13).
-//     SkipVerify(false).
-//     CipherSuites([]uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384})
+//
+//	WithTLSCustom("redis.example.com").
+//	  MinVersion(tls.VersionTLS13).
+//	  SkipVerify(false).
+//	  CipherSuites([]uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384})
 func WithTLSCustom(serverName string) *TLSBuilder {
 	return &TLSBuilder{
 		serverName:         serverName,
@@ -377,7 +391,8 @@ func (b *TLSBuilder) Build() Option {
 // WithReadOnly sets whether the replica should be read-only (default: true)
 //
 // Example:
-//   WithReadOnly(false) // Allow write operations (dangerous)
+//
+//	WithReadOnly(false) // Allow write operations (dangerous)
 func WithReadOnly(readOnly bool) Option {
 	return func(c *config) error {
 		c.readOnly = readOnly
@@ -388,7 +403,8 @@ func WithReadOnly(readOnly bool) Option {
 // WithServerEnabled controls whether to start the Redis-compatible server
 //
 // Example:
-//   WithServerEnabled(false) // Disable server, use only as library
+//
+//	WithServerEnabled(false) // Disable server, use only as library
 func WithServerEnabled(enabled bool) Option {
 	return func(c *config) error {
 		c.enableServer = enabled
@@ -400,7 +416,8 @@ func WithServerEnabled(enabled bool) Option {
 // Empty slice means replicate all commands
 //
 // Example:
-//   WithCommandFilters([]string{"SET", "DEL", "EXPIRE"})
+//
+//	WithCommandFilters([]string{"SET", "DEL", "EXPIRE"})
 func WithCommandFilters(commands []string) Option {
 	return func(c *config) error {
 		c.commandFilters = append([]string(nil), commands...)
@@ -412,8 +429,9 @@ func WithCommandFilters(commands []string) Option {
 // Empty slice means replicate all databases (default)
 //
 // Example:
-//   WithDatabases([]int{0, 1, 2}) // Only replicate databases 0, 1, and 2
-//   WithDatabases([]int{0})       // Only replicate database 0
+//
+//	WithDatabases([]int{0, 1, 2}) // Only replicate databases 0, 1, and 2
+//	WithDatabases([]int{0})       // Only replicate database 0
 func WithDatabases(databases []int) Option {
 	return func(c *config) error {
 		// Validate database numbers
@@ -431,7 +449,8 @@ func WithDatabases(databases []int) Option {
 // Clients connecting to the replica will need to authenticate with this password
 //
 // Example:
-//   WithReplicaAuth("replica-password")
+//
+//	WithReplicaAuth("replica-password")
 func WithReplicaAuth(password string) Option {
 	return func(c *config) error {
 		c.replicaPassword = password

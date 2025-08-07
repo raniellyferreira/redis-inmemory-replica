@@ -13,12 +13,12 @@ import (
 type SyncManager struct {
 	client  *Client
 	storage storage.Storage
-	
+
 	// Sync state
 	mu              sync.RWMutex
 	initialSyncDone bool
 	syncCallbacks   []func()
-	
+
 	// Configuration
 	maxRetries int
 	retryDelay time.Duration
@@ -28,23 +28,23 @@ type SyncManager struct {
 type SyncStatus struct {
 	InitialSyncCompleted bool
 	InitialSyncProgress  float64 // 0.0 to 1.0
-	Connected           bool
-	MasterHost          string
-	ReplicationOffset   int64
-	LastSyncTime        time.Time
-	BytesReceived       int64
-	CommandsProcessed   int64
+	Connected            bool
+	MasterHost           string
+	ReplicationOffset    int64
+	LastSyncTime         time.Time
+	BytesReceived        int64
+	CommandsProcessed    int64
 }
 
 // NewSyncManager creates a new synchronization manager
 func NewSyncManager(masterAddr string, stor storage.Storage) *SyncManager {
 	client := NewClient(masterAddr, stor)
-	
+
 	return &SyncManager{
-		client:      client,
-		storage:     stor,
-		maxRetries:  5,
-		retryDelay:  time.Second,
+		client:     client,
+		storage:    stor,
+		maxRetries: 5,
+		retryDelay: time.Second,
 	}
 }
 
@@ -108,13 +108,13 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 		callbacks := make([]func(), len(sm.syncCallbacks))
 		copy(callbacks, sm.syncCallbacks)
 		sm.mu.Unlock()
-		
+
 		// Notify callbacks
 		for _, callback := range callbacks {
 			callback()
 		}
 	})
-	
+
 	// Start replication with retries
 	var lastErr error
 	for i := 0; i < sm.maxRetries; i++ {
@@ -132,7 +132,7 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("failed to start sync after %d retries: %w", sm.maxRetries, lastErr)
 }
 
@@ -150,16 +150,16 @@ func (sm *SyncManager) WaitForSync(ctx context.Context) error {
 		return nil
 	}
 	sm.mu.RUnlock()
-	
+
 	// Wait for sync completion
 	syncDone := make(chan struct{})
-	
+
 	sm.mu.Lock()
 	sm.syncCallbacks = append(sm.syncCallbacks, func() {
 		close(syncDone)
 	})
 	sm.mu.Unlock()
-	
+
 	select {
 	case <-syncDone:
 		return nil
@@ -171,20 +171,20 @@ func (sm *SyncManager) WaitForSync(ctx context.Context) error {
 // SyncStatus returns the current synchronization status
 func (sm *SyncManager) SyncStatus() SyncStatus {
 	stats := sm.client.Stats()
-	
+
 	sm.mu.RLock()
 	initialSyncDone := sm.initialSyncDone
 	sm.mu.RUnlock()
-	
+
 	return SyncStatus{
 		InitialSyncCompleted: initialSyncDone,
 		InitialSyncProgress:  stats.InitialSyncProgress,
-		Connected:           stats.Connected,
-		MasterHost:          stats.MasterAddr,
-		ReplicationOffset:   stats.ReplicationOffset,
-		LastSyncTime:        stats.LastSyncTime,
-		BytesReceived:       stats.BytesReceived,
-		CommandsProcessed:   stats.CommandsProcessed,
+		Connected:            stats.Connected,
+		MasterHost:           stats.MasterAddr,
+		ReplicationOffset:    stats.ReplicationOffset,
+		LastSyncTime:         stats.LastSyncTime,
+		BytesReceived:        stats.BytesReceived,
+		CommandsProcessed:    stats.CommandsProcessed,
 	}
 }
 
@@ -192,13 +192,13 @@ func (sm *SyncManager) SyncStatus() SyncStatus {
 func (sm *SyncManager) OnSyncComplete(fn func()) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	if sm.initialSyncDone {
 		// Already synced, call immediately
 		go fn()
 		return
 	}
-	
+
 	sm.syncCallbacks = append(sm.syncCallbacks, fn)
 }
 

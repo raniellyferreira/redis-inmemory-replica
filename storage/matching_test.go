@@ -74,11 +74,11 @@ func TestMatchPatternSimple(t *testing.T) {
 		if strings.Count(tc.pattern, "*") > 1 || strings.Contains(tc.pattern, "?") {
 			continue
 		}
-		
+
 		t.Run("simple_"+tc.name, func(t *testing.T) {
 			result := matchPatternSimple(tc.str, tc.pattern)
 			if result != tc.expected {
-				t.Errorf("matchPatternSimple(%q, %q) = %v, expected %v", 
+				t.Errorf("matchPatternSimple(%q, %q) = %v, expected %v",
 					tc.str, tc.pattern, result, tc.expected)
 			}
 		})
@@ -90,7 +90,7 @@ func TestMatchPatternRegex(t *testing.T) {
 		t.Run("regex_"+tc.name, func(t *testing.T) {
 			result := matchPatternRegex(tc.str, tc.pattern)
 			if result != tc.expected {
-				t.Errorf("matchPatternRegex(%q, %q) = %v, expected %v", 
+				t.Errorf("matchPatternRegex(%q, %q) = %v, expected %v",
 					tc.str, tc.pattern, result, tc.expected)
 			}
 		})
@@ -102,7 +102,7 @@ func TestMatchPatternAutomaton(t *testing.T) {
 		t.Run("automaton_"+tc.name, func(t *testing.T) {
 			result := matchPatternAutomaton(tc.str, tc.pattern)
 			if result != tc.expected {
-				t.Errorf("matchPatternAutomaton(%q, %q) = %v, expected %v", 
+				t.Errorf("matchPatternAutomaton(%q, %q) = %v, expected %v",
 					tc.str, tc.pattern, result, tc.expected)
 			}
 		})
@@ -114,7 +114,7 @@ func TestMatchPatternGlob(t *testing.T) {
 		t.Run("glob_"+tc.name, func(t *testing.T) {
 			result := matchPatternGlob(tc.str, tc.pattern)
 			if result != tc.expected {
-				t.Errorf("matchPatternGlob(%q, %q) = %v, expected %v", 
+				t.Errorf("matchPatternGlob(%q, %q) = %v, expected %v",
 					tc.str, tc.pattern, result, tc.expected)
 			}
 		})
@@ -136,14 +136,14 @@ func TestMatchPatternWithStrategy(t *testing.T) {
 		t.Run(strategy.name, func(t *testing.T) {
 			for _, tc := range matchTestCases {
 				// Skip complex patterns not supported by simple strategy
-				if strategy.strategy == StrategySimple && 
+				if strategy.strategy == StrategySimple &&
 					(strings.Count(tc.pattern, "*") > 1 || strings.Contains(tc.pattern, "?")) {
 					continue
 				}
 
 				result := MatchPatternWithStrategy(tc.str, tc.pattern, strategy.strategy)
 				if result != tc.expected {
-					t.Errorf("MatchPatternWithStrategy(%q, %q, %s) = %v, expected %v", 
+					t.Errorf("MatchPatternWithStrategy(%q, %q, %s) = %v, expected %v",
 						tc.str, tc.pattern, strategy.name, result, tc.expected)
 				}
 			}

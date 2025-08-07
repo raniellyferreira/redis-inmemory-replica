@@ -26,7 +26,7 @@ func main() {
 		redisreplica.WithMaster(masterAddr),
 		redisreplica.WithMasterAuth(masterAuth), // Uses env var or empty string
 		redisreplica.WithReplicaAddr(replicaAddr),
-		redisreplica.WithReplicaAuth(replicaAuth), // Uses env var or empty string  
+		redisreplica.WithReplicaAuth(replicaAuth),  // Uses env var or empty string
 		redisreplica.WithDatabases([]int{0, 1, 2}), // Only replicate databases 0, 1, and 2
 		redisreplica.WithSyncTimeout(30*time.Second),
 	)
@@ -51,7 +51,7 @@ func main() {
 		fmt.Println("✅ Initial synchronization completed!")
 		fmt.Println("   Only data from databases 0, 1, and 2 have been replicated")
 		fmt.Println("   Data from other databases (3-15) will be ignored")
-		
+
 		// Show replica statistics
 		storage := replica.Storage()
 		fmt.Printf("   📈 Keys replicated: %d\n", storage.KeyCount())
@@ -75,11 +75,11 @@ func main() {
 		log.Println("   2. Set environment variables (optional):")
 		log.Println("      export REDIS_MASTER_ADDR=localhost:6379")
 		log.Println("      export REDIS_MASTER_AUTH=your_master_password")
-		log.Println("      export REDIS_REPLICA_ADDR=:6380") 
+		log.Println("      export REDIS_REPLICA_ADDR=:6380")
 		log.Println("      export REDIS_REPLICA_AUTH=your_replica_password")
 		log.Println("   3. Add data to different databases:")
 		log.Println("      redis-cli SELECT 0 && redis-cli SET key1 value1")
-		log.Println("      redis-cli SELECT 1 && redis-cli SET key2 value2") 
+		log.Println("      redis-cli SELECT 1 && redis-cli SET key2 value2")
 		log.Println("      redis-cli SELECT 3 && redis-cli SET key3 value3  # This won't be replicated")
 		log.Println("   4. Run this example again")
 		return
@@ -87,14 +87,14 @@ func main() {
 
 	// Demonstrate reading from replica
 	storage := replica.Storage()
-	
+
 	fmt.Println("\n📖 Reading from replica:")
-	
+
 	// Try to read from different databases
 	for db := 0; db < 4; db++ {
 		storage.SelectDB(db)
 		keys := storage.Keys()
-		
+
 		if len(keys) > 0 {
 			fmt.Printf("   Database %d: %d keys found\n", db, len(keys))
 			for _, key := range keys[:min(len(keys), 3)] { // Show first 3 keys
@@ -123,9 +123,9 @@ func main() {
 	fmt.Println("\n⏱️  Keeping replica running for 30 seconds...")
 	fmt.Println("   Try adding data to Redis and watch it replicate!")
 	fmt.Println("   Only changes to databases 0, 1, 2 will appear in the replica")
-	
+
 	time.Sleep(30 * time.Second)
-	
+
 	fmt.Println("\n👋 Shutting down...")
 }
 

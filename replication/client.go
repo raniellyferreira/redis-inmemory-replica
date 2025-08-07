@@ -22,31 +22,31 @@ type Client struct {
 	masterPassword string
 	tlsConfig      *tls.Config
 	storage        storage.Storage
-	
+
 	// Connection state
-	mu           sync.RWMutex
-	conn         net.Conn
-	reader       *protocol.Reader
-	writer       *protocol.Writer
-	connected    bool
-	
+	mu        sync.RWMutex
+	conn      net.Conn
+	reader    *protocol.Reader
+	writer    *protocol.Writer
+	connected bool
+
 	// Replication state
-	replID       string
-	replOffset   int64
-	masterRunID  string
-	
+	replID      string
+	replOffset  int64
+	masterRunID string
+
 	// Control channels
-	ctx          context.Context
-	cancel       context.CancelFunc
-	stopChan     chan struct{}
-	doneChan     chan struct{}
-	
+	ctx      context.Context
+	cancel   context.CancelFunc
+	stopChan chan struct{}
+	doneChan chan struct{}
+
 	// Statistics
-	stats        *ReplicationStats
-	
+	stats *ReplicationStats
+
 	// Callbacks
 	onSyncComplete []func()
-	
+
 	// Configuration
 	logger         Logger
 	metrics        MetricsCollector
@@ -61,7 +61,7 @@ type Client struct {
 // ReplicationStats tracks replication statistics
 type ReplicationStats struct {
 	mu sync.RWMutex
-	
+
 	Connected         bool
 	MasterAddr        string
 	MasterRunID       string
@@ -70,7 +70,7 @@ type ReplicationStats struct {
 	BytesReceived     int64
 	CommandsProcessed int64
 	ReconnectCount    int64
-	
+
 	// Sync progress
 	InitialSyncCompleted bool
 	InitialSyncProgress  float64
@@ -95,7 +95,7 @@ type MetricsCollector interface {
 // NewClient creates a new replication client
 func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	return &Client{
 		masterAddr:     masterAddr,
 		storage:        stor,
@@ -174,10 +174,10 @@ func (c *Client) SetDatabases(databases []int) {
 // Start begins replication
 func (c *Client) Start(ctx context.Context) error {
 	c.logger.Info("Starting replication client", "master", c.masterAddr)
-	
+
 	// Start replication goroutine
 	go c.run()
-	
+
 	// Wait for initial connection or timeout
 	select {
 	case <-time.After(c.syncTimeout):
@@ -191,25 +191,25 @@ func (c *Client) Start(ctx context.Context) error {
 		c.mu.RLock()
 		connected := c.connected
 		c.mu.RUnlock()
-		
+
 		if connected {
 			return nil
 		}
-		
+
 		// Wait a bit more
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	return fmt.Errorf("failed to establish connection")
 }
 
 // Stop stops replication
 func (c *Client) Stop() error {
 	c.logger.Info("Stopping replication client")
-	
+
 	c.cancel()
 	close(c.stopChan)
-	
+
 	select {
 	case <-c.doneChan:
 		return nil
@@ -222,7 +222,7 @@ func (c *Client) Stop() error {
 func (c *Client) Stats() ReplicationStats {
 	c.stats.mu.RLock()
 	defer c.stats.mu.RUnlock()
-	
+
 	// Create a copy to avoid race conditions
 	return ReplicationStats{
 		Connected:            c.stats.Connected,
@@ -248,7 +248,7 @@ func (c *Client) OnSyncComplete(fn func()) {
 // run is the main replication loop
 func (c *Client) run() {
 	defer close(c.doneChan)
-	
+
 	for {
 		select {
 		case <-c.stopChan:
@@ -258,7 +258,7 @@ func (c *Client) run() {
 			if err := c.connect(); err != nil {
 				c.logger.Error("Connection failed", "error", err)
 				c.recordMetricError("connection")
-				
+
 				// Exponential backoff
 				select {
 				case <-time.After(1 * time.Second):
@@ -267,14 +267,14 @@ func (c *Client) run() {
 				}
 				continue
 			}
-			
+
 			if err := c.performSync(); err != nil {
 				c.logger.Error("Sync failed", "error", err)
 				c.recordMetricError("sync")
 				c.disconnect()
 				continue
 			}
-			
+
 			// Start streaming replication
 			if err := c.streamCommands(); err != nil {
 				c.logger.Error("Streaming failed", "error", err)
@@ -289,38 +289,38 @@ func (c *Client) run() {
 // connect establishes connection to master
 func (c *Client) connect() error {
 	c.logger.Debug("Connecting to master", "addr", c.masterAddr)
-	
+
 	var conn net.Conn
 	var err error
-	
+
 	// Create dialer with timeout
 	dialer := &net.Dialer{
 		Timeout: c.connectTimeout,
 	}
-	
+
 	if c.tlsConfig != nil {
 		conn, err = tls.DialWithDialer(dialer, "tcp", c.masterAddr, c.tlsConfig)
 	} else {
 		conn, err = dialer.Dial("tcp", c.masterAddr)
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
-	
+
 	// Set connection timeouts with enhanced error handling
 	if err := c.setConnectionTimeouts(conn); err != nil {
 		conn.Close()
 		return fmt.Errorf("failed to set connection timeouts: %w", err)
 	}
-	
+
 	c.mu.Lock()
 	c.conn = conn
 	c.reader = protocol.NewReader(conn)
 	c.writer = protocol.NewWriter(conn)
 	c.connected = true
 	c.mu.Unlock()
-	
+
 	// Authenticate if password is set
 	if c.masterPassword != "" {
 		if err := c.authenticate(); err != nil {
@@ -328,16 +328,16 @@ func (c *Client) connect() error {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
 	}
-	
+
 	c.updateStats(func(s *ReplicationStats) {
 		s.Connected = true
 		s.ReconnectCount++
 	})
-	
+
 	if c.metrics != nil {
 		c.metrics.RecordReconnection()
 	}
-	
+
 	c.logger.Info("Connected to master")
 	return nil
 }
@@ -351,7 +351,7 @@ func (c *Client) disconnect() {
 	}
 	c.connected = false
 	c.mu.Unlock()
-	
+
 	c.updateStats(func(s *ReplicationStats) {
 		s.Connected = false
 	})
@@ -365,16 +365,16 @@ func (c *Client) authenticate() error {
 	if err := c.writer.Flush(); err != nil {
 		return err
 	}
-	
+
 	response, err := c.reader.ReadNext()
 	if err != nil {
 		return err
 	}
-	
+
 	if response.IsError() {
 		return fmt.Errorf("auth failed: %s", response.Error())
 	}
-	
+
 	return nil
 }
 
@@ -382,28 +382,28 @@ func (c *Client) authenticate() error {
 func (c *Client) performSync() error {
 	c.logger.Info("Starting initial synchronization")
 	startTime := time.Now()
-	
+
 	// Send PSYNC command for partial sync or SYNC for full sync
 	if err := c.sendPSYNC(); err != nil {
 		return fmt.Errorf("PSYNC failed: %w", err)
 	}
-	
+
 	// Read PSYNC response
 	response, err := c.reader.ReadNext()
 	if err != nil {
 		return fmt.Errorf("PSYNC response failed: %w", err)
 	}
-	
+
 	if response.IsError() {
 		return fmt.Errorf("PSYNC error: %s", response.Error())
 	}
-	
+
 	// Parse PSYNC response
 	parts := strings.Fields(response.String())
 	if len(parts) < 3 {
 		return fmt.Errorf("invalid PSYNC response: %s", response.String())
 	}
-	
+
 	if parts[0] == "FULLRESYNC" {
 		c.replID = parts[1]
 		offset, err := strconv.ParseInt(parts[2], 10, 64)
@@ -411,7 +411,7 @@ func (c *Client) performSync() error {
 			return fmt.Errorf("invalid offset: %s", parts[2])
 		}
 		c.replOffset = offset
-		
+
 		// Perform full sync
 		if err := c.performFullSync(); err != nil {
 			return err
@@ -419,28 +419,28 @@ func (c *Client) performSync() error {
 	} else {
 		return fmt.Errorf("unsupported PSYNC response: %s", response.String())
 	}
-	
+
 	syncDuration := time.Since(startTime)
 	if c.metrics != nil {
 		c.metrics.RecordSyncDuration(syncDuration)
 	}
-	
+
 	c.updateStats(func(s *ReplicationStats) {
 		s.InitialSyncCompleted = true
 		s.InitialSyncProgress = 1.0
 		s.LastSyncTime = time.Now()
 	})
-	
+
 	// Notify sync completion
 	c.mu.RLock()
 	callbacks := make([]func(), len(c.onSyncComplete))
 	copy(callbacks, c.onSyncComplete)
 	c.mu.RUnlock()
-	
+
 	for _, callback := range callbacks {
 		callback()
 	}
-	
+
 	c.logger.Info("Initial synchronization completed", "duration", syncDuration)
 	return nil
 }
@@ -457,20 +457,20 @@ func (c *Client) sendPSYNC() error {
 // performFullSync performs full synchronization via RDB
 func (c *Client) performFullSync() error {
 	c.logger.Debug("Performing full sync")
-	
+
 	// Create RDB handler
 	handler := &rdbStorageHandler{
 		storage:   c.storage,
 		logger:    c.logger,
 		databases: c.databases,
 	}
-	
+
 	// Create RDB stream reader that collects chunks
 	rdbBuffer := &rdbStreamBuffer{
 		chunks: make([][]byte, 0),
 		logger: c.logger,
 	}
-	
+
 	// Read RDB data as streaming bulk string
 	c.logger.Debug("Reading RDB data stream")
 	err := c.reader.ReadBulkString(func(chunk []byte) error {
@@ -478,35 +478,35 @@ func (c *Client) performFullSync() error {
 			c.logger.Debug("Received null RDB chunk")
 			return nil
 		}
-		
+
 		c.logger.Debug("Received RDB chunk", "size", len(chunk))
-		
+
 		// Copy chunk to avoid buffer reuse issues
 		chunkCopy := make([]byte, len(chunk))
 		copy(chunkCopy, chunk)
 		rdbBuffer.chunks = append(rdbBuffer.chunks, chunkCopy)
 		rdbBuffer.totalSize += len(chunk)
-		
+
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to read RDB data: %w", err)
 	}
-	
+
 	c.logger.Debug("RDB data reading completed", "totalSize", rdbBuffer.totalSize, "chunks", len(rdbBuffer.chunks))
-	
+
 	// Parse RDB from collected buffer
 	if err := ParseRDB(rdbBuffer, handler); err != nil {
 		return fmt.Errorf("RDB parsing failed: %w", err)
 	}
-	
+
 	return nil
 }
 
 // streamCommands streams replication commands
 func (c *Client) streamCommands() error {
 	c.logger.Debug("Starting command streaming")
-	
+
 	for {
 		select {
 		case <-c.stopChan:
@@ -520,7 +520,7 @@ func (c *Client) streamCommands() error {
 				}
 				return fmt.Errorf("read command failed: %w", err)
 			}
-			
+
 			// Process command
 			if err := c.processCommand(value); err != nil {
 				c.logger.Error("Command processing failed", "error", err)
@@ -536,14 +536,14 @@ func (c *Client) processCommand(value protocol.Value) error {
 	if err != nil {
 		return fmt.Errorf("parse command failed: %w", err)
 	}
-	
+
 	// Apply command filters
 	if len(c.commandFilters) > 0 {
 		if _, allowed := c.commandFilters[cmd.Name]; !allowed {
 			return nil // Skip filtered command
 		}
 	}
-	
+
 	// Apply database filtering for SELECT command
 	if cmd.Name == "SELECT" && len(c.databases) > 0 {
 		if len(cmd.Args) == 1 {
@@ -554,7 +554,7 @@ func (c *Client) processCommand(value protocol.Value) error {
 			}
 		}
 	}
-	
+
 	// For data commands, check if current database should be replicated
 	if len(c.databases) > 0 && isDataCommand(cmd.Name) {
 		currentDB := c.storage.CurrentDB()
@@ -562,25 +562,25 @@ func (c *Client) processCommand(value protocol.Value) error {
 			return nil // Skip command in non-replicated database
 		}
 	}
-	
+
 	startTime := time.Now()
-	
+
 	// Execute command
 	if err := c.executeCommand(cmd); err != nil {
 		return fmt.Errorf("execute command failed: %w", err)
 	}
-	
+
 	// Update statistics
 	duration := time.Since(startTime)
 	if c.metrics != nil {
 		c.metrics.RecordCommandProcessed(cmd.Name, duration)
 	}
-	
+
 	c.updateStats(func(s *ReplicationStats) {
 		s.CommandsProcessed++
 		s.ReplicationOffset++
 	})
-	
+
 	return nil
 }
 
@@ -593,10 +593,10 @@ func (c *Client) executeCommand(cmd *protocol.Command) error {
 		}
 		key := string(cmd.Args[0])
 		value := cmd.Args[1]
-		
+
 		// TODO: Parse SET options (EX, PX, etc.)
 		return c.storage.Set(key, value, nil)
-		
+
 	case "DEL":
 		keys := make([]string, len(cmd.Args))
 		for i, arg := range cmd.Args {
@@ -604,7 +604,7 @@ func (c *Client) executeCommand(cmd *protocol.Command) error {
 		}
 		c.storage.Del(keys...)
 		return nil
-		
+
 	case "SELECT":
 		if len(cmd.Args) != 1 {
 			return fmt.Errorf("SELECT requires 1 argument")
@@ -614,11 +614,11 @@ func (c *Client) executeCommand(cmd *protocol.Command) error {
 			return fmt.Errorf("invalid database number: %s", cmd.Args[0])
 		}
 		return c.storage.SelectDB(db)
-		
+
 	case "PING":
 		// Ignore PING commands
 		return nil
-		
+
 	default:
 		c.logger.Debug("Unsupported command", "command", cmd.Name)
 		return nil
@@ -643,11 +643,11 @@ func (c *Client) recordMetricError(errorType string) {
 func isDataCommand(cmd string) bool {
 	switch cmd {
 	case "SET", "DEL", "EXPIRE", "PERSIST", "INCR", "DECR", "INCRBY", "DECRBY",
-		 "APPEND", "SETRANGE", "GETSET", "SETNX", "SETEX", "PSETEX", "MSET", "MSETNX",
-		 "LPUSH", "RPUSH", "LPOP", "RPOP", "LSET", "LTRIM", "LINSERT", "LREM",
-		 "SADD", "SREM", "SPOP", "SMOVE", "SINTERSTORE", "SUNIONSTORE", "SDIFFSTORE",
-		 "ZADD", "ZREM", "ZINCRBY", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREMRANGEBYLEX",
-		 "ZINTERSTORE", "ZUNIONSTORE", "HSET", "HDEL", "HINCRBY", "HINCRBYFLOAT", "HMSET":
+		"APPEND", "SETRANGE", "GETSET", "SETNX", "SETEX", "PSETEX", "MSET", "MSETNX",
+		"LPUSH", "RPUSH", "LPOP", "RPOP", "LSET", "LTRIM", "LINSERT", "LREM",
+		"SADD", "SREM", "SPOP", "SMOVE", "SINTERSTORE", "SUNIONSTORE", "SDIFFSTORE",
+		"ZADD", "ZREM", "ZINCRBY", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREMRANGEBYLEX",
+		"ZINTERSTORE", "ZUNIONSTORE", "HSET", "HDEL", "HINCRBY", "HINCRBYFLOAT", "HMSET":
 		return true
 	default:
 		return false
@@ -664,14 +664,14 @@ type rdbStorageHandler struct {
 
 func (h *rdbStorageHandler) OnDatabase(index int) error {
 	h.currentDB = index
-	
+
 	// Skip database if not in filter list (when filter is set)
 	if len(h.databases) > 0 {
 		if _, allowed := h.databases[index]; !allowed {
 			return nil // Skip this database
 		}
 	}
-	
+
 	return h.storage.SelectDB(index)
 }
 
@@ -682,7 +682,7 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 			return nil // Skip key in non-replicated database
 		}
 	}
-	
+
 	switch v := value.(type) {
 	case []byte:
 		return h.storage.Set(string(key), v, expiry)
@@ -714,38 +714,38 @@ func (r *rdbBulkStringReader) Read(p []byte) (n int, err error) {
 	if r.pos >= r.length {
 		return 0, io.EOF
 	}
-	
+
 	// Ensure we don't read beyond the data buffer
 	if r.pos >= len(r.data) {
 		return 0, io.EOF
 	}
-	
+
 	remaining := r.length - r.pos
 	dataRemaining := len(r.data) - r.pos
-	
+
 	// Use the smaller of remaining bytes or available data
 	actualRemaining := remaining
 	if dataRemaining < remaining {
 		actualRemaining = dataRemaining
 	}
-	
+
 	toCopy := len(p)
 	if toCopy > actualRemaining {
 		toCopy = actualRemaining
 	}
-	
+
 	if toCopy <= 0 {
 		return 0, io.EOF
 	}
-	
+
 	// Validate slice bounds before copying
 	if r.pos+toCopy > len(r.data) {
 		return 0, fmt.Errorf("buffer overflow: attempting to read beyond data bounds (pos=%d, toCopy=%d, dataLen=%d)", r.pos, toCopy, len(r.data))
 	}
-	
+
 	copy(p, r.data[r.pos:r.pos+toCopy])
 	r.pos += toCopy
-	
+
 	return toCopy, nil
 }
 
@@ -763,36 +763,36 @@ func (r *rdbStreamBuffer) Read(p []byte) (n int, err error) {
 	if r.chunkIdx >= len(r.chunks) {
 		return 0, io.EOF
 	}
-	
+
 	totalCopied := 0
-	
+
 	for totalCopied < len(p) && r.chunkIdx < len(r.chunks) {
 		currentChunk := r.chunks[r.chunkIdx]
-		
+
 		// Check if we've read all data from current chunk
 		if r.chunkPos >= len(currentChunk) {
 			r.chunkIdx++
 			r.chunkPos = 0
 			continue
 		}
-		
+
 		// Copy data from current chunk
 		remaining := len(currentChunk) - r.chunkPos
 		toCopy := len(p) - totalCopied
 		if toCopy > remaining {
 			toCopy = remaining
 		}
-		
+
 		copy(p[totalCopied:], currentChunk[r.chunkPos:r.chunkPos+toCopy])
 		r.chunkPos += toCopy
 		totalCopied += toCopy
 		r.pos += toCopy
 	}
-	
+
 	if totalCopied == 0 {
 		return 0, io.EOF
 	}
-	
+
 	return totalCopied, nil
 }
 
@@ -814,7 +814,7 @@ func (l *defaultLogger) Error(msg string, fields ...interface{}) {
 // setConnectionTimeouts sets enhanced connection timeouts with improved error handling
 func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 	now := time.Now()
-	
+
 	// Set read timeout with validation
 	if c.readTimeout > 0 {
 		if c.readTimeout < time.Millisecond {
@@ -828,7 +828,7 @@ func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 		}
 		c.logger.Debug("Set read timeout", "timeout", c.readTimeout)
 	}
-	
+
 	// Set write timeout with validation
 	if c.writeTimeout > 0 {
 		if c.writeTimeout < time.Millisecond {
@@ -842,7 +842,7 @@ func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 		}
 		c.logger.Debug("Set write timeout", "timeout", c.writeTimeout)
 	}
-	
+
 	return nil
 }
 
@@ -851,11 +851,11 @@ func (c *Client) refreshConnectionTimeouts() error {
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
-	
+
 	if conn == nil {
 		return fmt.Errorf("no active connection")
 	}
-	
+
 	return c.setConnectionTimeouts(conn)
 }
 
@@ -870,7 +870,7 @@ func (c *Client) validateTimeoutConfiguration() error {
 			return fmt.Errorf("connect timeout too large: %v (maximum: 5m)", c.connectTimeout)
 		}
 	}
-	
+
 	// Validate sync timeout
 	if c.syncTimeout > 0 {
 		if c.syncTimeout < time.Second {
@@ -880,7 +880,7 @@ func (c *Client) validateTimeoutConfiguration() error {
 			return fmt.Errorf("sync timeout too large: %v (maximum: 1h)", c.syncTimeout)
 		}
 	}
-	
+
 	// Validate read timeout
 	if c.readTimeout > 0 {
 		if c.readTimeout < time.Millisecond {
@@ -890,7 +890,7 @@ func (c *Client) validateTimeoutConfiguration() error {
 			return fmt.Errorf("read timeout too large: %v (maximum: 24h)", c.readTimeout)
 		}
 	}
-	
+
 	// Validate write timeout
 	if c.writeTimeout > 0 {
 		if c.writeTimeout < time.Millisecond {
@@ -900,6 +900,6 @@ func (c *Client) validateTimeoutConfiguration() error {
 			return fmt.Errorf("write timeout too large: %v (maximum: 24h)", c.writeTimeout)
 		}
 	}
-	
+
 	return nil
 }

@@ -11,12 +11,12 @@ import (
 // TestOptimalCleanupConfiguration finds the best configuration for different workloads
 func TestOptimalCleanupConfiguration(t *testing.T) {
 	workloads := []struct {
-		name        string
-		totalKeys   int
+		name         string
+		totalKeys    int
 		expiredRatio float64
 	}{
 		{"LightWorkload", 100, 0.1},
-		{"ModerateWorkload", 1000, 0.3}, 
+		{"ModerateWorkload", 1000, 0.3},
 		{"HeavyWorkload", 10000, 0.5},
 	}
 
@@ -65,20 +65,20 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 
 					// Measure cleanup effectiveness
 					start := time.Now()
-					
-					// Wait for cleanup cycles
-					maxWait := 3 * time.Second
+
+					// Wait for cleanup cycles - reduced timeout for CI stability
+					maxWait := 1 * time.Second
 					var finalKeys, finalMemory int64
-					
+
 					for elapsed := time.Duration(0); elapsed < maxWait; elapsed = time.Since(start) {
 						finalKeys = s.KeyCount()
 						finalMemory = s.MemoryUsage()
-						
+
 						// If significant cleanup occurred, we can stop waiting
 						if float64(finalKeys)/float64(initialKeys) < 0.8 {
 							break
 						}
-						time.Sleep(100 * time.Millisecond)
+						time.Sleep(50 * time.Millisecond)
 					}
 
 					cleanupTime := time.Since(start)
@@ -90,7 +90,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 					if expiredCount == 0 {
 						cleanupRatio = 0
 					}
-					
+
 					memoryEfficiency := float64(memoryFreed) / float64(initialMemory)
 					timeEfficiency := float64(keysRemoved) / cleanupTime.Seconds()
 
@@ -151,7 +151,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 			// Benchmark typical operations during cleanup
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("benchmark_key_%d", i%100)
-				
+
 				// Mix of operations that would happen during normal usage
 				switch i % 5 {
 				case 0:
@@ -161,7 +161,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 				case 2:
 					s.Exists(key)
 				case 3:
-					s.TTL(key) 
+					s.TTL(key)
 				case 4:
 					s.KeyCount()
 				}

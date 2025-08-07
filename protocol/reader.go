@@ -11,10 +11,10 @@ import (
 const (
 	// CRLF is the Redis protocol line terminator
 	CRLF = "\r\n"
-	
+
 	// maxBulkSize is the maximum size for bulk strings (1GB)
 	maxBulkSize = 1024 * 1024 * 1024
-	
+
 	// maxArraySize is the maximum size for arrays
 	maxArraySize = 1024 * 1024
 )
@@ -44,7 +44,7 @@ func (r *Reader) ReadNext() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	switch ValueType(typeByte) {
 	case TypeSimpleString:
 		return r.readSimpleString()
@@ -67,7 +67,7 @@ func (r *Reader) readSimpleString() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	return Value{
 		Type: TypeSimpleString,
 		Data: line,
@@ -80,7 +80,7 @@ func (r *Reader) readError() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	return Value{
 		Type: TypeError,
 		Data: line,
@@ -93,12 +93,12 @@ func (r *Reader) readInteger() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	integer, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid integer: %s", line)
 	}
-	
+
 	return Value{
 		Type:    TypeInteger,
 		Integer: integer,
@@ -111,12 +111,12 @@ func (r *Reader) readBulkString() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	length, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid bulk string length: %s", line)
 	}
-	
+
 	// Handle null bulk string
 	if length == -1 {
 		return Value{
@@ -124,23 +124,23 @@ func (r *Reader) readBulkString() (Value, error) {
 			IsNull: true,
 		}, nil
 	}
-	
+
 	// Validate length
 	if length < 0 || length > maxBulkSize {
 		return Value{}, fmt.Errorf("invalid bulk string length: %d", length)
 	}
-	
+
 	// Read the string data plus CRLF
 	data := make([]byte, length)
 	if _, err := io.ReadFull(r.br, data); err != nil {
 		return Value{}, err
 	}
-	
+
 	// Read and validate CRLF
 	if err := r.expectCRLF(); err != nil {
 		return Value{}, err
 	}
-	
+
 	return Value{
 		Type: TypeBulkString,
 		Data: data,
@@ -153,12 +153,12 @@ func (r *Reader) readArray() (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	
+
 	length, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid array length: %s", line)
 	}
-	
+
 	// Handle null array
 	if length == -1 {
 		return Value{
@@ -166,12 +166,12 @@ func (r *Reader) readArray() (Value, error) {
 			IsNull: true,
 		}, nil
 	}
-	
+
 	// Validate length
 	if length < 0 || length > maxArraySize {
 		return Value{}, fmt.Errorf("invalid array length: %d", length)
 	}
-	
+
 	// Read array elements
 	array := make([]Value, length)
 	for i := int64(0); i < length; i++ {
@@ -181,7 +181,7 @@ func (r *Reader) readArray() (Value, error) {
 		}
 		array[i] = value
 	}
-	
+
 	return Value{
 		Type:  TypeArray,
 		Array: array,
@@ -196,55 +196,55 @@ func (r *Reader) ReadBulkString(fn func(chunk []byte) error) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if ValueType(typeByte) != TypeBulkString {
 		return fmt.Errorf("expected bulk string, got %c", typeByte)
 	}
-	
+
 	// Read length
 	line, err := r.readLine()
 	if err != nil {
 		return err
 	}
-	
+
 	length, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid bulk string length: %s", line)
 	}
-	
+
 	// Handle null bulk string
 	if length == -1 {
 		return fn(nil)
 	}
-	
+
 	// Validate length
 	if length < 0 || length > maxBulkSize {
 		return fmt.Errorf("invalid bulk string length: %d", length)
 	}
-	
+
 	// Read data in chunks
 	const chunkSize = 8192
 	buffer := make([]byte, chunkSize)
 	remaining := length
-	
+
 	for remaining > 0 {
 		toRead := chunkSize
 		if remaining < int64(chunkSize) {
 			toRead = int(remaining)
 		}
-		
+
 		n, err := io.ReadFull(r.br, buffer[:toRead])
 		if err != nil {
 			return err
 		}
-		
+
 		if err := fn(buffer[:n]); err != nil {
 			return err
 		}
-		
+
 		remaining -= int64(n)
 	}
-	
+
 	// Read and validate CRLF
 	return r.expectCRLF()
 }
@@ -255,60 +255,60 @@ func (r *Reader) Skip() error {
 	if err != nil {
 		return err
 	}
-	
+
 	switch ValueType(typeByte) {
 	case TypeSimpleString, TypeError:
 		_, err := r.readLine()
 		return err
-		
+
 	case TypeInteger:
 		_, err := r.readLine()
 		return err
-		
+
 	case TypeBulkString:
 		line, err := r.readLine()
 		if err != nil {
 			return err
 		}
-		
+
 		length, err := strconv.ParseInt(string(line), 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid bulk string length: %s", line)
 		}
-		
+
 		if length == -1 {
 			return nil // null bulk string
 		}
-		
+
 		if length < 0 || length > maxBulkSize {
 			return fmt.Errorf("invalid bulk string length: %d", length)
 		}
-		
+
 		// Skip the data and CRLF
 		if _, err := r.br.Discard(int(length) + 2); err != nil {
 			return err
 		}
 		return nil
-		
+
 	case TypeArray:
 		line, err := r.readLine()
 		if err != nil {
 			return err
 		}
-		
+
 		length, err := strconv.ParseInt(string(line), 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid array length: %s", line)
 		}
-		
+
 		if length == -1 {
 			return nil // null array
 		}
-		
+
 		if length < 0 || length > maxArraySize {
 			return fmt.Errorf("invalid array length: %d", length)
 		}
-		
+
 		// Skip array elements recursively
 		for i := int64(0); i < length; i++ {
 			if err := r.Skip(); err != nil {
@@ -316,7 +316,7 @@ func (r *Reader) Skip() error {
 			}
 		}
 		return nil
-		
+
 	default:
 		return fmt.Errorf("unknown RESP type: %c", typeByte)
 	}
@@ -328,12 +328,12 @@ func (r *Reader) readLine() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read line: %w", err)
 	}
-	
+
 	// Remove CRLF - must have at least \r\n
 	if len(line) < 2 {
 		return nil, fmt.Errorf("line too short (%d bytes), expected CRLF terminator", len(line))
 	}
-	
+
 	if !bytes.HasSuffix(line, crlfBytes) {
 		// Provide detailed error about what we actually received
 		if len(line) >= 2 {
@@ -342,7 +342,7 @@ func (r *Reader) readLine() ([]byte, error) {
 		}
 		return nil, fmt.Errorf("missing CRLF terminator, line ends with [%d]", line[len(line)-1])
 	}
-	
+
 	return line[:len(line)-2], nil
 }
 
@@ -353,10 +353,10 @@ func (r *Reader) expectCRLF() error {
 	if err != nil {
 		return fmt.Errorf("failed to read CRLF terminator (read %d/2 bytes): %w", n, err)
 	}
-	
+
 	if !bytes.Equal(crlf, crlfBytes) {
 		return fmt.Errorf("expected CRLF terminator [13, 10], got [%d, %d]", crlf[0], crlf[1])
 	}
-	
+
 	return nil
 }

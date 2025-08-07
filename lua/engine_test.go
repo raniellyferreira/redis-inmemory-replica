@@ -97,27 +97,27 @@ func TestLuaEngine_RedisCommands(t *testing.T) {
 			expected: false, // Redis nil becomes false in Lua
 		},
 		{
-			name:   "DEL command",
-			script: "redis.call('SET', 'delkey', 'value'); return redis.call('DEL', 'delkey')",
-			keys:   []string{},
-			args:   []string{},
-			setup:  func() {},
+			name:     "DEL command",
+			script:   "redis.call('SET', 'delkey', 'value'); return redis.call('DEL', 'delkey')",
+			keys:     []string{},
+			args:     []string{},
+			setup:    func() {},
 			expected: int64(1),
 		},
 		{
-			name:   "EXISTS command",
-			script: "redis.call('SET', 'existkey', 'value'); return redis.call('EXISTS', 'existkey')",
-			keys:   []string{},
-			args:   []string{},
-			setup:  func() {},
+			name:     "EXISTS command",
+			script:   "redis.call('SET', 'existkey', 'value'); return redis.call('EXISTS', 'existkey')",
+			keys:     []string{},
+			args:     []string{},
+			setup:    func() {},
 			expected: int64(1),
 		},
 		{
-			name:   "TYPE command",
-			script: "redis.call('SET', 'typekey', 'value'); return redis.call('TYPE', 'typekey')",
-			keys:   []string{},
-			args:   []string{},
-			setup:  func() {},
+			name:     "TYPE command",
+			script:   "redis.call('SET', 'typekey', 'value'); return redis.call('TYPE', 'typekey')",
+			keys:     []string{},
+			args:     []string{},
+			setup:    func() {},
 			expected: "string",
 		},
 	}
@@ -188,7 +188,7 @@ func TestLuaEngine_ScriptCaching(t *testing.T) {
 	engine := NewEngine(stor)
 
 	script := "return 'cached script'"
-	
+
 	// Load script and get SHA
 	sha := engine.LoadScript(script)
 	if len(sha) != 40 { // SHA1 is 40 characters in hex
@@ -217,14 +217,14 @@ func TestLuaEngine_ScriptExists(t *testing.T) {
 
 	script1 := "return 1"
 	script2 := "return 2"
-	
+
 	sha1 := engine.LoadScript(script1)
 	sha2 := engine.LoadScript(script2)
 
 	// Test exists with loaded scripts
 	results := engine.ScriptExists([]string{sha1, sha2, "nonexistent"})
 	expected := []bool{true, true, false}
-	
+
 	for i, result := range results {
 		if result != expected[i] {
 			t.Errorf("position %d: expected %t, got %t", i, expected[i], result)

@@ -25,7 +25,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 	for _, scenario := range scenarios {
 		b.Run(scenario.name, func(b *testing.B) {
 			b.StopTimer()
-			
+
 			s := storage.NewMemory()
 			defer s.Close()
 
@@ -47,7 +47,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 			}
 
 			b.StartTimer()
-			
+
 			// Benchmark the cleanup simulation
 			for i := 0; i < b.N; i++ {
 				// This simulates the old approach - check every key
@@ -71,17 +71,17 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 			storage.CleanupConfig{SampleSize: 10, MaxRounds: 2, BatchSize: 5, ExpiredThreshold: 0.25},
 		},
 		{
-			"Medium_1000", 
+			"Medium_1000",
 			1000, 200,
 			storage.CleanupConfig{SampleSize: 20, MaxRounds: 4, BatchSize: 10, ExpiredThreshold: 0.25},
 		},
 		{
-			"Large_10000", 
+			"Large_10000",
 			10000, 2000,
 			storage.CleanupConfig{SampleSize: 50, MaxRounds: 8, BatchSize: 20, ExpiredThreshold: 0.3},
 		},
 		{
-			"XLarge_50000", 
+			"XLarge_50000",
 			50000, 10000,
 			storage.CleanupConfig{SampleSize: 100, MaxRounds: 10, BatchSize: 50, ExpiredThreshold: 0.3},
 		},
@@ -90,7 +90,7 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 	for _, scenario := range scenarios {
 		b.Run(scenario.name, func(b *testing.B) {
 			b.StopTimer()
-			
+
 			s := storage.NewMemory()
 			defer s.Close()
 
@@ -113,7 +113,7 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 			}
 
 			b.StartTimer()
-			
+
 			// The actual incremental cleanup is harder to benchmark directly
 			// since it runs in background. Instead, we benchmark scanning
 			// which uses the improved approach
@@ -159,7 +159,7 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 		counter := 0
 		for pb.Next() {
 			key := fmt.Sprintf("bench_key_%d", counter%100)
-			
+
 			// Mix of operations
 			switch counter % 4 {
 			case 0:
@@ -171,7 +171,7 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 			case 3:
 				s.TTL(key)
 			}
-			
+
 			counter++
 		}
 	})
@@ -188,7 +188,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 			storage.CleanupConfig{SampleSize: 10, MaxRounds: 2, BatchSize: 5, ExpiredThreshold: 0.5},
 		},
 		{
-			"Balanced", 
+			"Balanced",
 			storage.CleanupConfig{SampleSize: 20, MaxRounds: 4, BatchSize: 10, ExpiredThreshold: 0.25},
 		},
 		{
@@ -228,7 +228,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 				key := fmt.Sprintf("workload_%d", i%100)
 				s.Set(key, []byte("value"), nil)
 				s.Get(key)
-				
+
 				// Occasionally trigger operations that might interact with cleanup
 				if i%10 == 0 {
 					s.KeyCount()
@@ -258,7 +258,7 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 		shortExpiry := time.Now().Add(1 * time.Millisecond)
 		key := fmt.Sprintf("temp_key_%d", i)
 		s.Set(key, []byte("temporary_value"), &shortExpiry)
-		
+
 		// Allow some time for cleanup
 		if i%100 == 0 {
 			runtime.Gosched()
@@ -269,7 +269,7 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 	// Check memory usage efficiency
 	memUsage := s.MemoryUsage()
 	keyCount := s.KeyCount()
-	
+
 	b.ReportMetric(float64(memUsage), "bytes")
 	b.ReportMetric(float64(keyCount), "keys")
 }
@@ -297,13 +297,13 @@ func BenchmarkCleanupLatency(b *testing.B) {
 	// Measure operation latency during cleanup
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
-		
+
 		// Perform a typical operation
 		key := fmt.Sprintf("latency_test_%d", i%1000)
 		s.Set(key, []byte("test_value"), nil)
 		value, _ := s.Get(key)
 		_ = value
-		
+
 		latency := time.Since(start)
 		if i%1000 == 0 {
 			b.ReportMetric(float64(latency.Nanoseconds()), "ns/op")

@@ -67,18 +67,6 @@ jobs:
 
   e2e-with-auth:
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:latest
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        env:
-          REDIS_PASSWORD: testpassword123
 
     steps:
     - uses: actions/checkout@v4
@@ -102,11 +90,13 @@ jobs:
     - name: Install redis-tools
       run: sudo apt-get update && sudo apt-get install -y redis-tools
 
-    - name: Start Redis with password
+    - name: Configure Redis with password
       run: |
-        sudo systemctl stop redis-server || true
-        redis-server --requirepass testpassword123 --daemonize yes --port 6379
-        sleep 2
+        # Stop any existing Redis and start with auth using Docker
+        docker stop redis-auth || true
+        docker rm redis-auth || true
+        docker run -d --name redis-auth -p 6379:6379 redis:latest redis-server --requirepass testpassword123
+        sleep 5
     
     - name: Wait for Redis with auth
       run: |

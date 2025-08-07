@@ -18,8 +18,9 @@ check_redis() {
     local host=$(echo "$addr" | cut -d':' -f1)
     local port=$(echo "$addr" | cut -d':' -f2)
     
-    # Handle case where port might not be specified
-    if [[ "$host" == "$port" ]]; then
+    # Handle case where port might not be specified (no colon in address)
+    if [[ "$addr" != *":"* ]]; then
+        host="$addr"
         port="6379"
     fi
     
@@ -36,9 +37,9 @@ check_redis() {
         return 1
     fi
     
-    # Try to ping Redis and check for PONG response
+    # Try to ping Redis and check for PONG response with timeout
     local result
-    result=$(eval "$redis_cmd ping" 2>/dev/null)
+    result=$(timeout 5 eval "$redis_cmd ping" 2>/dev/null)
     [[ "$result" == "PONG" ]]
 }
 

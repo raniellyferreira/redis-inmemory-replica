@@ -13,31 +13,31 @@ import (
 type SyncStatus struct {
 	InitialSyncCompleted bool
 	InitialSyncProgress  float64 // 0.0 to 1.0
-	Connected           bool
-	MasterHost          string
-	ReplicationOffset   int64
-	LastSyncTime        time.Time
-	BytesReceived       int64
-	CommandsProcessed   int64
+	Connected            bool
+	MasterHost           string
+	ReplicationOffset    int64
+	LastSyncTime         time.Time
+	BytesReceived        int64
+	CommandsProcessed    int64
 }
 
 // Replica represents an in-memory Redis replica
 type Replica struct {
 	// Configuration
 	config *config
-	
+
 	// Components
-	storage    storage.Storage
-	syncMgr    *replication.SyncManager
-	
+	storage storage.Storage
+	syncMgr *replication.SyncManager
+
 	// State
 	mu      sync.RWMutex
 	started bool
 	closed  bool
-	
+
 	// Statistics (exported for monitoring)
 	Stats ReplicationStats
-	
+
 	// Callbacks
 	syncCallbacks []func()
 }
@@ -59,44 +59,44 @@ type Replica struct {
 // Since: v1.0.0
 func New(opts ...Option) (*Replica, error) {
 	cfg := defaultConfig()
-	
+
 	// Apply options
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
 			return nil, err
 		}
 	}
-	
+
 	// Create storage
 	stor := storage.NewMemory()
 	if cfg.maxMemory > 0 {
 		stor.SetMemoryLimit(cfg.maxMemory)
 	}
-	
+
 	// Create sync manager
 	syncMgr := replication.NewSyncManager(cfg.masterAddr, stor)
-	
+
 	// Configure sync manager
 	if cfg.masterPassword != "" {
 		syncMgr.SetAuth(cfg.masterPassword)
 	}
-	
+
 	if cfg.masterTLS != nil {
 		syncMgr.SetTLS(cfg.masterTLS)
 	}
-	
+
 	syncMgr.SetLogger(&replicationLogger{logger: cfg.logger})
 	if cfg.metrics != nil {
 		syncMgr.SetMetrics(&metricsAdapter{metrics: cfg.metrics})
 	}
-	
+
 	syncMgr.SetSyncTimeout(cfg.syncTimeout)
 	syncMgr.SetConnectTimeout(cfg.connectTimeout)
 	syncMgr.SetReadTimeout(cfg.readTimeout)
 	syncMgr.SetWriteTimeout(cfg.writeTimeout)
 	syncMgr.SetCommandFilters(cfg.commandFilters)
 	syncMgr.SetDatabases(cfg.databases)
-	
+
 	replica := &Replica{
 		config:  cfg,
 		storage: stor,
@@ -105,19 +105,19 @@ func New(opts ...Option) (*Replica, error) {
 			CommandsProcessed: make(map[string]int64),
 		},
 	}
-	
+
 	// Register sync completion callback
 	syncMgr.OnSyncComplete(func() {
 		replica.mu.RLock()
 		callbacks := make([]func(), len(replica.syncCallbacks))
 		copy(callbacks, replica.syncCallbacks)
 		replica.mu.RUnlock()
-		
+
 		for _, callback := range callbacks {
 			callback()
 		}
 	})
-	
+
 	return replica, nil
 }
 
@@ -136,27 +136,27 @@ func New(opts ...Option) (*Replica, error) {
 func (r *Replica) Start(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if r.closed {
 		return ErrClosed
 	}
-	
+
 	if r.started {
 		return nil // Already started
 	}
-	
+
 	// Start replication
 	if err := r.syncMgr.Start(ctx); err != nil {
 		return err
 	}
-	
+
 	r.started = true
-	
+
 	// TODO: Start server if enabled
 	if r.config.enableServer {
 		// Server implementation would go here
 	}
-	
+
 	return nil
 }
 
@@ -176,7 +176,7 @@ func (r *Replica) WaitForSync(ctx context.Context) error {
 	if !r.isStarted() {
 		return ErrNotConnected
 	}
-	
+
 	return r.syncMgr.WaitForSync(ctx)
 }
 
@@ -194,16 +194,16 @@ func (r *Replica) WaitForSync(ctx context.Context) error {
 // Since: v1.0.0
 func (r *Replica) SyncStatus() SyncStatus {
 	status := r.syncMgr.SyncStatus()
-	
+
 	return SyncStatus{
 		InitialSyncCompleted: status.InitialSyncCompleted,
 		InitialSyncProgress:  status.InitialSyncProgress,
-		Connected:           status.Connected,
-		MasterHost:          status.MasterHost,
-		ReplicationOffset:   status.ReplicationOffset,
-		LastSyncTime:        status.LastSyncTime,
-		BytesReceived:       status.BytesReceived,
-		CommandsProcessed:   status.CommandsProcessed,
+		Connected:            status.Connected,
+		MasterHost:           status.MasterHost,
+		ReplicationOffset:    status.ReplicationOffset,
+		LastSyncTime:         status.LastSyncTime,
+		BytesReceived:        status.BytesReceived,
+		CommandsProcessed:    status.CommandsProcessed,
 	}
 }
 
@@ -220,25 +220,25 @@ func (r *Replica) SyncStatus() SyncStatus {
 func (r *Replica) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if r.closed {
 		return nil
 	}
-	
+
 	r.closed = true
-	
+
 	// Stop replication
 	if r.started {
 		if err := r.syncMgr.Stop(); err != nil {
 			return err
 		}
 	}
-	
+
 	// Close storage
 	if err := r.storage.Close(); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -258,7 +258,7 @@ func (r *Replica) Close() error {
 func (r *Replica) OnSyncComplete(fn func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.syncCallbacks = append(r.syncCallbacks, fn)
 }
 
@@ -308,7 +308,7 @@ func (r *Replica) IsConnected() bool {
 // Since: v1.0.0
 func (r *Replica) GetInfo() map[string]interface{} {
 	info := r.storage.Info()
-	
+
 	// Add replication info
 	status := r.SyncStatus()
 	info["replication"] = map[string]interface{}{
@@ -318,10 +318,10 @@ func (r *Replica) GetInfo() map[string]interface{} {
 		"replication_offset":     status.ReplicationOffset,
 		"commands_processed":     status.CommandsProcessed,
 	}
-	
+
 	// Add version info
 	info["version"] = VersionInfo()
-	
+
 	return info
 }
 

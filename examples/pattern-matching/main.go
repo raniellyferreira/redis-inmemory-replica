@@ -16,7 +16,7 @@ func main() {
 	patterns := []string{"user:*", "*:profile", "cache:*:data", "user:*:profile:*", "h?llo"}
 	testStrings := []string{
 		"user:123",
-		"user:123:profile", 
+		"user:123:profile",
 		"cache:session:data",
 		"user:123:profile:settings",
 		"hello",
@@ -38,18 +38,18 @@ func main() {
 
 	for _, pattern := range patterns {
 		fmt.Printf("\nPattern: %s\n", pattern)
-		
+
 		for _, str := range testStrings {
 			fmt.Printf("  %-30s -> ", str)
-			
+
 			for _, strategy := range strategies {
 				// Skip unsupported patterns for simple strategy
-				if strategy.strategy == storage.StrategySimple && 
+				if strategy.strategy == storage.StrategySimple &&
 					(countChars(pattern, '*') > 1 || contains(pattern, '?')) {
 					fmt.Printf("%-10s ", "N/A")
 					continue
 				}
-				
+
 				match := storage.MatchPatternWithStrategy(str, pattern, strategy.strategy)
 				if match {
 					fmt.Printf("%-10s ", "✓")
@@ -70,16 +70,16 @@ func main() {
 	iterations := 1000000
 
 	for _, strategy := range strategies {
-		if strategy.strategy == storage.StrategySimple || 
-		   strategy.strategy == storage.StrategyGlob {
-			
+		if strategy.strategy == storage.StrategySimple ||
+			strategy.strategy == storage.StrategyGlob {
+
 			start := time.Now()
 			for i := 0; i < iterations; i++ {
 				storage.MatchPatternWithStrategy(testString, pattern, strategy.strategy)
 			}
 			duration := time.Since(start)
-			
-			fmt.Printf("%-10s: %v (%d iterations)\n", 
+
+			fmt.Printf("%-10s: %v (%d iterations)\n",
 				strategy.name, duration, iterations)
 		}
 	}
@@ -89,22 +89,22 @@ func main() {
 
 	// Save original strategy
 	originalStrategy := storage.GetMatchingStrategy()
-	
+
 	// Test different global configurations
 	fmt.Printf("Original strategy: %v\n", originalStrategy)
-	
+
 	// Switch to regex for complex patterns
 	storage.SetMatchingStrategy(storage.StrategyRegex)
 	fmt.Printf("Changed to: %v\n", storage.GetMatchingStrategy())
-	
+
 	// Test with global configuration
 	complexPattern := "user:*:profile:*"
 	testStr := "user:123:profile:settings"
-	
+
 	// This will use the globally configured regex strategy
 	match := matchPatternWrapper(testStr, complexPattern)
 	fmt.Printf("Complex pattern match (%s vs %s): %v\n", testStr, complexPattern, match)
-	
+
 	// Restore original strategy
 	storage.SetMatchingStrategy(originalStrategy)
 	fmt.Printf("Restored to: %v\n", storage.GetMatchingStrategy())

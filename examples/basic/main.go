@@ -38,7 +38,7 @@ func main() {
 	}
 
 	log.Println("📡 Replica started, waiting for initial sync...")
-	
+
 	// Wait for initial synchronization
 	if err := replica.WaitForSync(ctx); err != nil {
 		log.Fatal("Failed to sync:", err)
@@ -53,7 +53,7 @@ func main() {
 	// Keep running to demonstrate real-time sync
 	log.Println("🔄 Replica is running. Make changes in Redis master to see real-time sync...")
 	log.Println("Press Ctrl+C to stop")
-	
+
 	// Monitor status periodically
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -71,12 +71,12 @@ func main() {
 
 func printStatus(replica *redisreplica.Replica) {
 	status := replica.SyncStatus()
-	
+
 	fmt.Printf("\n📊 Replica Status:\n")
 	fmt.Printf("   Connected: %v\n", status.Connected)
 	fmt.Printf("   Master: %s\n", status.MasterHost)
-	fmt.Printf("   Initial Sync: %v (%.1f%%)\n", 
-		status.InitialSyncCompleted, 
+	fmt.Printf("   Initial Sync: %v (%.1f%%)\n",
+		status.InitialSyncCompleted,
 		status.InitialSyncProgress*100)
 	fmt.Printf("   Replication Offset: %d\n", status.ReplicationOffset)
 	fmt.Printf("   Commands Processed: %d\n", status.CommandsProcessed)
@@ -94,18 +94,18 @@ func printStatus(replica *redisreplica.Replica) {
 
 func demonstrateStorageAccess(replica *redisreplica.Replica) {
 	storage := replica.Storage()
-	
+
 	fmt.Printf("\n🔍 Demonstrating storage access:\n")
-	
+
 	// Try to get some common keys
 	testKeys := []string{"test:key", "counter", "user:1", "config:app"}
-	
+
 	for _, key := range testKeys {
 		if value, exists := storage.Get(key); exists {
 			fmt.Printf("   %s = %s\n", key, string(value))
 		}
 	}
-	
+
 	// Show all keys
 	allKeys := storage.Keys()
 	if len(allKeys) > 0 {

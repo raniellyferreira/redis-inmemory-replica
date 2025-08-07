@@ -48,7 +48,7 @@ func BenchmarkMatchPatternSimple(b *testing.B) {
 	// Reduce the number of test combinations to prevent timeouts
 	patterns := []string{"user:*", "*:profile", "exact_match"}
 	strings := []string{"user:123", "user:123:profile", "cache:session:data"}
-	
+
 	for _, pattern := range patterns {
 		for _, str := range strings {
 			b.Run(fmt.Sprintf("%s_vs_%s", sanitizeName(pattern), sanitizeName(str)), func(b *testing.B) {
@@ -65,7 +65,7 @@ func BenchmarkMatchPatternRegex(b *testing.B) {
 	// Reduce combinations to prevent timeouts
 	patterns := []string{"user:*", "*:profile", "user:*:profile:*"}
 	strings := []string{"user:123", "user:123:profile", "cache:session:data"}
-	
+
 	for _, pattern := range patterns {
 		for _, str := range strings {
 			b.Run(fmt.Sprintf("%s_vs_%s", sanitizeName(pattern), sanitizeName(str)), func(b *testing.B) {
@@ -82,7 +82,7 @@ func BenchmarkMatchPatternAutomaton(b *testing.B) {
 	// Reduce combinations to prevent timeouts
 	patterns := []string{"user:*", "*:profile", "user:*:profile:*"}
 	strings := []string{"user:123", "user:123:profile", "cache:session:data"}
-	
+
 	for _, pattern := range patterns {
 		for _, str := range strings {
 			b.Run(fmt.Sprintf("%s_vs_%s", sanitizeName(pattern), sanitizeName(str)), func(b *testing.B) {
@@ -99,7 +99,7 @@ func BenchmarkMatchPatternGlob(b *testing.B) {
 	// Reduce combinations to prevent timeouts
 	patterns := []string{"user:*", "*:profile", "user:*:profile:*"}
 	strings := []string{"user:123", "user:123:profile", "cache:session:data"}
-	
+
 	for _, pattern := range patterns {
 		for _, str := range strings {
 			b.Run(fmt.Sprintf("%s_vs_%s", sanitizeName(pattern), sanitizeName(str)), func(b *testing.B) {
@@ -128,11 +128,11 @@ func BenchmarkMatchPatternWithStrategy(b *testing.B) {
 	for _, tc := range testCases {
 		strategyName := map[MatchingStrategy]string{
 			StrategySimple:    "simple",
-			StrategyRegex:     "regex", 
+			StrategyRegex:     "regex",
 			StrategyAutomaton: "automaton",
 			StrategyGlob:      "glob",
 		}[tc.strategy]
-		
+
 		b.Run(fmt.Sprintf("%s_%s_%s", strategyName, sanitizeName(tc.pattern), sanitizeName(tc.str)), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				MatchPatternWithStrategy(tc.str, tc.pattern, tc.strategy)
@@ -146,25 +146,25 @@ func BenchmarkCompareStrategies(b *testing.B) {
 	// Simplified comparison to prevent timeouts
 	pattern := "user:*"
 	str := "user:123"
-	
+
 	b.Run("simple", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternSimple(str, pattern)
 		}
 	})
-	
+
 	b.Run("regex", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternRegex(str, pattern)
 		}
 	})
-	
+
 	b.Run("automaton", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternAutomaton(str, pattern)
 		}
 	})
-	
+
 	b.Run("glob", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternGlob(str, pattern)
@@ -188,11 +188,11 @@ func BenchmarkComplexPatterns(b *testing.B) {
 	for _, tc := range testCases {
 		strategyName := map[MatchingStrategy]string{
 			StrategySimple:    "simple",
-			StrategyRegex:     "regex", 
+			StrategyRegex:     "regex",
 			StrategyAutomaton: "automaton",
 			StrategyGlob:      "glob",
 		}[tc.strategy]
-		
+
 		b.Run(fmt.Sprintf("%s_%s", strategyName, sanitizeName(tc.pattern)), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				MatchPatternWithStrategy(tc.str, tc.pattern, tc.strategy)
@@ -206,13 +206,13 @@ func BenchmarkOriginalVsOptimized(b *testing.B) {
 	// Simplified to prevent timeouts
 	pattern := "user:*"
 	str := "user:123"
-	
+
 	b.Run("original", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternOriginal(str, pattern)
 		}
 	})
-	
+
 	b.Run("optimized", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			matchPatternSimple(str, pattern)
@@ -224,7 +224,7 @@ func BenchmarkOriginalVsOptimized(b *testing.B) {
 func BenchmarkGlobToRegex(b *testing.B) {
 	// Simplified to prevent timeouts
 	patterns := []string{"user:*", "*:profile", "user:*:profile:*"}
-	
+
 	for _, pattern := range patterns {
 		b.Run(sanitizeName(pattern), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
@@ -238,7 +238,7 @@ func BenchmarkGlobToRegex(b *testing.B) {
 func BenchmarkMemoryUsage(b *testing.B) {
 	pattern := "user:*:profile:*"
 	str := "user:123:profile:settings"
-	
+
 	strategies := []struct {
 		name string
 		fn   func(string, string) bool
@@ -278,19 +278,19 @@ func matchPatternOriginal(str, pattern string) bool {
 	if pattern == "*" {
 		return true
 	}
-	
+
 	if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") {
 		return str == pattern
 	}
-	
+
 	// For now, just check prefix/suffix with single *
 	if strings.HasPrefix(pattern, "*") {
 		return strings.HasSuffix(str, pattern[1:])
 	}
-	
+
 	if strings.HasSuffix(pattern, "*") {
 		return strings.HasPrefix(str, pattern[:len(pattern)-1])
 	}
-	
+
 	return str == pattern
 }

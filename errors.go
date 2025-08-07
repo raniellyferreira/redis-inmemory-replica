@@ -9,22 +9,22 @@ import (
 var (
 	// ErrNotConnected indicates the replica is not connected to the master
 	ErrNotConnected = errors.New("not connected to master")
-	
+
 	// ErrSyncInProgress indicates synchronization is currently in progress
 	ErrSyncInProgress = errors.New("synchronization in progress")
-	
+
 	// ErrReadOnly indicates an attempt to perform a write operation on a read-only replica
 	ErrReadOnly = errors.New("replica is read-only")
-	
+
 	// ErrInvalidCommand indicates an unsupported or malformed command
 	ErrInvalidCommand = errors.New("invalid command")
-	
+
 	// ErrInvalidConfig indicates invalid configuration options
 	ErrInvalidConfig = errors.New("invalid configuration")
-	
+
 	// ErrTimeout indicates an operation timed out
 	ErrTimeout = errors.New("operation timed out")
-	
+
 	// ErrClosed indicates the replica has been closed
 	ErrClosed = errors.New("replica is closed")
 )

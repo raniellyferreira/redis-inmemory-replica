@@ -12,29 +12,29 @@ import (
 // RDB format constants
 const (
 	// RDB version and opcodes
-	RDBVersion9    = 9
-	RDBOpcodeEOF   = 0xFF
-	RDBOpcodeDB    = 0xFE
-	RDBOpcodeExpiry = 0xFD
+	RDBVersion9       = 9
+	RDBOpcodeEOF      = 0xFF
+	RDBOpcodeDB       = 0xFE
+	RDBOpcodeExpiry   = 0xFD
 	RDBOpcodeExpiryMs = 0xFC
 	RDBOpcodeResizeDB = 0xFB
-	RDBOpcodeAux   = 0xFA
-	
+	RDBOpcodeAux      = 0xFA
+
 	// Type constants
-	RDBTypeString     = 0
-	RDBTypeList       = 1
-	RDBTypeSet        = 2
-	RDBTypeZSet       = 3
-	RDBTypeHash       = 4
-	RDBTypeZSet2      = 5
-	RDBTypeModule     = 6
-	RDBTypeModule2    = 7
-	RDBTypeHashZipmap = 9
-	RDBTypeListZiplist = 10
-	RDBTypeSetIntset  = 11
-	RDBTypeZSetZiplist = 12
-	RDBTypeHashZiplist = 13
-	RDBTypeListQuicklist = 14
+	RDBTypeString          = 0
+	RDBTypeList            = 1
+	RDBTypeSet             = 2
+	RDBTypeZSet            = 3
+	RDBTypeHash            = 4
+	RDBTypeZSet2           = 5
+	RDBTypeModule          = 6
+	RDBTypeModule2         = 7
+	RDBTypeHashZipmap      = 9
+	RDBTypeListZiplist     = 10
+	RDBTypeSetIntset       = 11
+	RDBTypeZSetZiplist     = 12
+	RDBTypeHashZiplist     = 13
+	RDBTypeListQuicklist   = 14
 	RDBTypeStreamListpacks = 15
 )
 
@@ -42,13 +42,13 @@ const (
 type RDBHandler interface {
 	// OnDatabase is called when switching to a new database
 	OnDatabase(index int) error
-	
+
 	// OnKey is called for each key-value pair
 	OnKey(key []byte, value interface{}, expiry *time.Time) error
-	
+
 	// OnAux is called for auxiliary fields
 	OnAux(key, value []byte) error
-	
+
 	// OnEnd is called when parsing is complete
 	OnEnd() error
 }
@@ -76,24 +76,24 @@ func (p *RDBParser) Parse() error {
 	if _, err := io.ReadFull(p.br, header); err != nil {
 		return fmt.Errorf("failed to read RDB header: %w", err)
 	}
-	
+
 	if string(header[:5]) != "REDIS" {
 		return fmt.Errorf("invalid RDB magic: %s", header[:5])
 	}
-	
+
 	version, err := strconv.Atoi(string(header[5:]))
 	if err != nil {
 		return fmt.Errorf("invalid RDB version: %s", header[5:])
 	}
-	
+
 	if version > RDBVersion9 {
 		return fmt.Errorf("unsupported RDB version: %d", version)
 	}
-	
+
 	// Parse RDB content
 	currentDB := 0
 	var expiry *time.Time
-	
+
 	for {
 		opcode, err := p.br.ReadByte()
 		if err == io.EOF {
@@ -102,12 +102,12 @@ func (p *RDBParser) Parse() error {
 		if err != nil {
 			return fmt.Errorf("failed to read opcode: %w", err)
 		}
-		
+
 		switch opcode {
 		case RDBOpcodeEOF:
 			// End of RDB
 			return p.handler.OnEnd()
-			
+
 		case RDBOpcodeDB:
 			// Database selector
 			db, err := p.readLength()
@@ -118,7 +118,7 @@ func (p *RDBParser) Parse() error {
 			if err := p.handler.OnDatabase(currentDB); err != nil {
 				return err
 			}
-			
+
 		case RDBOpcodeExpiry:
 			// Expiry in seconds
 			var timestamp uint32
@@ -127,7 +127,7 @@ func (p *RDBParser) Parse() error {
 			}
 			t := time.Unix(int64(timestamp), 0)
 			expiry = &t
-			
+
 		case RDBOpcodeExpiryMs:
 			// Expiry in milliseconds
 			var timestamp uint64
@@ -136,7 +136,7 @@ func (p *RDBParser) Parse() error {
 			}
 			t := time.Unix(int64(timestamp/1000), int64((timestamp%1000)*1000000))
 			expiry = &t
-			
+
 		case RDBOpcodeResizeDB:
 			// Database resize hint - skip for now
 			if _, err := p.readLength(); err != nil {
@@ -145,7 +145,7 @@ func (p *RDBParser) Parse() error {
 			if _, err := p.readLength(); err != nil {
 				return err
 			}
-			
+
 		case RDBOpcodeAux:
 			// Auxiliary field
 			key, err := p.readString()
@@ -159,28 +159,28 @@ func (p *RDBParser) Parse() error {
 			if err := p.handler.OnAux(key, value); err != nil {
 				return err
 			}
-			
+
 		default:
 			// Key-value pair
 			key, err := p.readString()
 			if err != nil {
 				return fmt.Errorf("failed to read key: %w", err)
 			}
-			
+
 			value, err := p.readValue(opcode)
 			if err != nil {
 				return fmt.Errorf("failed to read value for key %s: %w", key, err)
 			}
-			
+
 			if err := p.handler.OnKey(key, value, expiry); err != nil {
 				return err
 			}
-			
+
 			// Reset expiry after use
 			expiry = nil
 		}
 	}
-	
+
 	return p.handler.OnEnd()
 }
 
@@ -190,12 +190,12 @@ func (p *RDBParser) readLength() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	
+
 	switch (b & 0xC0) >> 6 {
 	case 0:
 		// 6-bit length
 		return uint64(b & 0x3F), nil
-		
+
 	case 1:
 		// 14-bit length
 		b2, err := p.br.ReadByte()
@@ -203,7 +203,7 @@ func (p *RDBParser) readLength() (uint64, error) {
 			return 0, err
 		}
 		return uint64(b&0x3F)<<8 | uint64(b2), nil
-		
+
 	case 2:
 		// 32-bit length
 		var length uint32
@@ -211,7 +211,7 @@ func (p *RDBParser) readLength() (uint64, error) {
 			return 0, err
 		}
 		return uint64(length), nil
-		
+
 	case 3:
 		// Special format
 		switch b & 0x3F {
@@ -233,7 +233,7 @@ func (p *RDBParser) readLength() (uint64, error) {
 			return 0, fmt.Errorf("invalid special length encoding: %d", b&0x3F)
 		}
 	}
-	
+
 	return 0, fmt.Errorf("invalid length encoding: %d", (b&0xC0)>>6)
 }
 
@@ -243,7 +243,7 @@ func (p *RDBParser) readString() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Allocate exact buffer size needed for the string data
 	// This allocation is necessary as we need to read exactly 'length' bytes
 	// from the RDB stream. Buffer pooling could be added here for optimization
@@ -252,7 +252,7 @@ func (p *RDBParser) readString() ([]byte, error) {
 	if _, err := io.ReadFull(p.br, data); err != nil {
 		return nil, err
 	}
-	
+
 	return data, nil
 }
 
@@ -261,13 +261,13 @@ func (p *RDBParser) readValue(valueType byte) (interface{}, error) {
 	switch valueType {
 	case RDBTypeString:
 		return p.readString()
-		
+
 	case RDBTypeList:
 		length, err := p.readLength()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		list := make([][]byte, length)
 		for i := uint64(0); i < length; i++ {
 			element, err := p.readString()
@@ -277,13 +277,13 @@ func (p *RDBParser) readValue(valueType byte) (interface{}, error) {
 			list[i] = element
 		}
 		return list, nil
-		
+
 	case RDBTypeSet:
 		length, err := p.readLength()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		set := make(map[string]struct{})
 		for i := uint64(0); i < length; i++ {
 			member, err := p.readString()
@@ -293,13 +293,13 @@ func (p *RDBParser) readValue(valueType byte) (interface{}, error) {
 			set[string(member)] = struct{}{}
 		}
 		return set, nil
-		
+
 	case RDBTypeHash:
 		length, err := p.readLength()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		hash := make(map[string][]byte)
 		for i := uint64(0); i < length; i++ {
 			field, err := p.readString()
@@ -313,7 +313,7 @@ func (p *RDBParser) readValue(valueType byte) (interface{}, error) {
 			hash[string(field)] = value
 		}
 		return hash, nil
-		
+
 	default:
 		// For unsupported types, skip the value
 		return nil, fmt.Errorf("unsupported RDB type: %d", valueType)
