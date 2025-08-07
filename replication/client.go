@@ -459,6 +459,11 @@ func (c *Client) performSync() error {
 	}
 
 	c.logger.Info("Initial synchronization completed", "duration", syncDuration)
+	
+	// Add stabilization delay to ensure connection is ready for command streaming
+	// This prevents protocol desynchronization issues when transitioning from RDB to commands
+	time.Sleep(100 * time.Millisecond)
+	
 	return nil
 }
 
@@ -522,6 +527,7 @@ func (c *Client) performFullSync() error {
 		if rdbBuffer.totalSize < 500 { // Small RDB likely means empty or mostly empty
 			c.logger.Info("Assuming empty database due to small RDB size and parsing error")
 			c.logger.Debug("RDB parsing completed")
+			
 			return nil
 		}
 		
@@ -529,12 +535,25 @@ func (c *Client) performFullSync() error {
 	}
 
 	c.logger.Debug("RDB parsing completed")
+	
+	// Note: Reader cleanup will be handled during connection establishment
+	// for command streaming to ensure proper synchronization
+	
 	return nil
 }
 
 // streamCommands streams replication commands
 func (c *Client) streamCommands() error {
 	c.logger.Debug("Starting command streaming")
+	
+	// Ensure we have a clean reader state for command streaming
+	// This prevents protocol desynchronization after RDB parsing
+	c.mu.Lock()
+	if c.conn != nil {
+		c.reader = protocol.NewReader(c.conn)
+	}
+	c.mu.Unlock()
+	
 	protocolErrorCount := 0
 	maxProtocolErrors := 5 // Allow a few protocol errors before reconnecting
 
