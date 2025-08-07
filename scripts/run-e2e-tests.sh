@@ -18,29 +18,73 @@ check_redis() {
     local host=$(echo "$addr" | cut -d':' -f1)
     local port=$(echo "$addr" | cut -d':' -f2)
     
-    if [[ -n "$REDIS_PASSWORD" ]]; then
-        redis-cli -h "$host" -p "$port" -a "$REDIS_PASSWORD" ping >/dev/null 2>&1
-    else
-        redis-cli -h "$host" -p "$port" ping >/dev/null 2>&1
+    # Handle case where port might not be specified
+    if [[ "$host" == "$port" ]]; then
+        port="6379"
     fi
+    
+    local redis_cmd="redis-cli -h $host -p $port"
+    
+    if [[ -n "$REDIS_PASSWORD" ]]; then
+        # Use --no-auth-warning to suppress auth warnings in newer Redis versions
+        redis_cmd="$redis_cmd --no-auth-warning -a $REDIS_PASSWORD"
+    fi
+    
+    # Check if redis-cli is available
+    if ! command -v redis-cli >/dev/null 2>&1; then
+        echo "❌ redis-cli not found. Please install redis-tools."
+        return 1
+    fi
+    
+    # Try to ping Redis and check for PONG response
+    local result
+    result=$(eval "$redis_cmd ping" 2>/dev/null)
+    [[ "$result" == "PONG" ]]
 }
 
 # Function to start Redis in Docker
 start_docker_redis() {
     echo "🐳 Starting Redis in Docker..."
     
+    # Check if Docker is available
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "❌ Docker is not installed or not in PATH"
+        exit 1
+    fi
+    
+    # Check if Docker daemon is running
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Docker daemon is not running"
+        exit 1
+    fi
+    
     # Check if Redis container already exists
     if docker ps -a --format 'table {{.Names}}' | grep -q '^redis-e2e-test$'; then
-        echo "📋 Redis container already exists, restarting..."
-        docker restart redis-e2e-test
-    else
-        echo "📦 Creating new Redis container..."
-        if [[ -n "$REDIS_PASSWORD" ]]; then
-            docker run --name redis-e2e-test -p 6379:6379 -d redis:latest redis-server --requirepass "$REDIS_PASSWORD"
-        else
-            docker run --name redis-e2e-test -p 6379:6379 -d redis:latest
+        echo "📋 Redis container already exists..."
+        
+        # Check if it's running
+        if docker ps --format 'table {{.Names}}' | grep -q '^redis-e2e-test$'; then
+            echo "   Container is already running, stopping it first..."
+            docker stop redis-e2e-test >/dev/null 2>&1 || true
         fi
+        
+        echo "   Removing existing container..."
+        docker rm redis-e2e-test >/dev/null 2>&1 || true
     fi
+    
+    echo "📦 Creating new Redis container..."
+    local docker_cmd="docker run --name redis-e2e-test -p 6379:6379 -d redis:latest"
+    
+    if [[ -n "$REDIS_PASSWORD" ]]; then
+        docker_cmd="$docker_cmd redis-server --requirepass $REDIS_PASSWORD"
+    fi
+    
+    if ! eval "$docker_cmd"; then
+        echo "❌ Failed to start Redis container"
+        exit 1
+    fi
+    
+    echo "   Container started successfully"
     
     # Wait for Redis to be ready
     echo "⏳ Waiting for Redis to be ready..."

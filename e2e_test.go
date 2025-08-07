@@ -119,10 +119,11 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	// Test 3: Set a large value to test buffer handling
 	t.Log("Test 3: Testing large value replication")
-	largeValue := string(make([]byte, 10000)) // 10KB value
-	for i := range largeValue {
-		largeValue = largeValue[:i] + "X" + largeValue[i+1:]
+	largeValueBytes := make([]byte, 10000) // 10KB value
+	for i := range largeValueBytes {
+		largeValueBytes[i] = 'X'
 	}
+	largeValue := string(largeValueBytes)
 	
 	if err := setRedisKey(redisAddr, "large:value", largeValue); err != nil {
 		t.Errorf("Failed to set large value: %v", err)
@@ -262,26 +263,69 @@ func TestRDBParsingRobustness(t *testing.T) {
 // Helper functions
 
 func isRedisAvailable(addr string) bool {
-	cmd := exec.Command("redis-cli", "-h", parseHost(addr), "-p", parsePort(addr), "ping")
-	if err := cmd.Run(); err != nil {
+	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "ping"}
+	
+	// Add password if available
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		args = append([]string{"-a", password}, args...)
+	}
+	
+	cmd := exec.Command("redis-cli", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		return false
 	}
-	return true
+	
+	// Check if the output is "PONG"
+	return string(output) == "PONG\n"
 }
 
 func clearRedis(addr string) error {
-	cmd := exec.Command("redis-cli", "-h", parseHost(addr), "-p", parsePort(addr), "flushall")
-	return cmd.Run()
+	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "flushall"}
+	
+	// Add password if available
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		args = append([]string{"-a", password}, args...)
+	}
+	
+	cmd := exec.Command("redis-cli", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("redis flushall failed: %v, output: %s", err, output)
+	}
+	return nil
 }
 
 func setRedisKey(addr, key, value string) error {
-	cmd := exec.Command("redis-cli", "-h", parseHost(addr), "-p", parsePort(addr), "set", key, value)
-	return cmd.Run()
+	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "set", key, value}
+	
+	// Add password if available
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		args = append([]string{"-a", password}, args...)
+	}
+	
+	cmd := exec.Command("redis-cli", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("redis set failed: %v, output: %s", err, output)
+	}
+	return nil
 }
 
 func deleteRedisKey(addr, key string) error {
-	cmd := exec.Command("redis-cli", "-h", parseHost(addr), "-p", parsePort(addr), "del", key)
-	return cmd.Run()
+	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "del", key}
+	
+	// Add password if available
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		args = append([]string{"-a", password}, args...)
+	}
+	
+	cmd := exec.Command("redis-cli", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("redis del failed: %v, output: %s", err, output)
+	}
+	return nil
 }
 
 func parseHost(addr string) string {

@@ -222,44 +222,12 @@ If tests are slow:
 
 ## Integration with CI/CD
 
-### GitHub Actions Example
+The repository includes a comprehensive GitHub Actions workflow (`.github/workflows/e2e.yml`) that automatically runs end-to-end tests on every push and pull request. The workflow includes:
 
-```yaml
-name: E2E Tests
-on: [push, pull_request]
-
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:latest
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-go@v4
-      with:
-        go-version: '1.24.5'
-    
-    - name: Wait for Redis
-      run: |
-        until redis-cli ping; do
-          echo "Waiting for Redis..."
-          sleep 1
-        done
-    
-    - name: Run E2E Tests
-      run: go test -v -run TestEndToEndWithRealRedis
-      env:
-        REDIS_ADDR: localhost:6379
-```
+- **Standard E2E tests** with Redis running without authentication
+- **Authentication tests** with Redis requiring a password  
+- **Benchmark tests** to ensure performance standards are maintained
+- **Proper Redis setup** with health checks and service containers
 
 ### Docker Compose for Testing
 

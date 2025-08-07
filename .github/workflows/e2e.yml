@@ -1,0 +1,123 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.24.5
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Install redis-tools
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    
+    - name: Wait for Redis
+      run: |
+        until redis-cli ping; do
+          echo "Waiting for Redis..."
+          sleep 1
+        done
+        echo "Redis is ready!"
+    
+    - name: Run E2E Tests
+      run: go test -v -run TestEndToEndWithRealRedis
+      env:
+        REDIS_ADDR: localhost:6379
+
+    - name: Run RDB Parsing Tests
+      run: go test -v -run TestRDBParsingRobustness
+      env:
+        REDIS_ADDR: localhost:6379
+
+    - name: Run Replication Benchmarks
+      run: go test -v -bench BenchmarkReplicationThroughput -benchtime=3s
+      env:
+        REDIS_ADDR: localhost:6379
+
+  e2e-with-auth:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        env:
+          REDIS_PASSWORD: testpassword123
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.24.5
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Install redis-tools
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+
+    - name: Start Redis with password
+      run: |
+        sudo systemctl stop redis-server || true
+        redis-server --requirepass testpassword123 --daemonize yes --port 6379
+        sleep 2
+    
+    - name: Wait for Redis with auth
+      run: |
+        until redis-cli -a testpassword123 ping; do
+          echo "Waiting for Redis with auth..."
+          sleep 1
+        done
+        echo "Redis with auth is ready!"
+    
+    - name: Run E2E Tests with Authentication
+      run: go test -v -run TestEndToEndWithRealRedis
+      env:
+        REDIS_ADDR: localhost:6379
+        REDIS_PASSWORD: testpassword123
