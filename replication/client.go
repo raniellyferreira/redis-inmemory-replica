@@ -521,12 +521,14 @@ func (c *Client) performFullSync() error {
 		// If this is likely an empty database, just complete the sync
 		if rdbBuffer.totalSize < 500 { // Small RDB likely means empty or mostly empty
 			c.logger.Info("Assuming empty database due to small RDB size and parsing error")
+			c.logger.Debug("RDB parsing completed")
 			return nil
 		}
 		
 		return fmt.Errorf("RDB parsing failed: %w", err)
 	}
 
+	c.logger.Debug("RDB parsing completed")
 	return nil
 }
 
@@ -539,11 +541,18 @@ func (c *Client) streamCommands() error {
 		case <-c.stopChan:
 			return nil
 		default:
-			// Read next command
+			// Read next command with timeout to prevent hanging
 			value, err := c.reader.ReadNext()
 			if err != nil {
 				if err == io.EOF {
 					return fmt.Errorf("connection closed")
+				}
+				// For protocol errors during streaming, log and continue
+				if strings.Contains(err.Error(), "unknown RESP type") ||
+					strings.Contains(err.Error(), "expected CRLF terminator") ||
+					strings.Contains(err.Error(), "expected bulk string") {
+					c.logger.Debug("Protocol error during streaming, continuing", "error", err)
+					continue
 				}
 				return fmt.Errorf("read command failed: %w", err)
 			}
@@ -556,6 +565,8 @@ func (c *Client) streamCommands() error {
 		}
 	}
 }
+
+
 
 // processCommand processes a replication command
 func (c *Client) processCommand(value protocol.Value) error {

@@ -234,8 +234,11 @@ func TestRDBParsingRobustness(t *testing.T) {
 	defer cancel()
 
 	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
 	replica.OnSyncComplete(func() {
-		close(syncCompleted)
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
 	})
 
 	if err := replica.Start(ctx); err != nil {
