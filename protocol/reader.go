@@ -3,7 +3,6 @@ package protocol
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -327,12 +326,21 @@ func (r *Reader) Skip() error {
 func (r *Reader) readLine() ([]byte, error) {
 	line, err := r.br.ReadBytes('\n')
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read line: %w", err)
 	}
 	
-	// Remove CRLF
-	if len(line) < 2 || !bytes.HasSuffix(line, crlfBytes) {
-		return nil, errors.New("missing CRLF terminator")
+	// Remove CRLF - must have at least \r\n
+	if len(line) < 2 {
+		return nil, fmt.Errorf("line too short (%d bytes), expected CRLF terminator", len(line))
+	}
+	
+	if !bytes.HasSuffix(line, crlfBytes) {
+		// Provide detailed error about what we actually received
+		if len(line) >= 2 {
+			lastTwo := line[len(line)-2:]
+			return nil, fmt.Errorf("missing CRLF terminator, got [%d, %d] instead of [13, 10]", lastTwo[0], lastTwo[1])
+		}
+		return nil, fmt.Errorf("missing CRLF terminator, line ends with [%d]", line[len(line)-1])
 	}
 	
 	return line[:len(line)-2], nil
@@ -341,12 +349,13 @@ func (r *Reader) readLine() ([]byte, error) {
 // expectCRLF reads and validates CRLF terminator
 func (r *Reader) expectCRLF() error {
 	crlf := make([]byte, 2)
-	if _, err := io.ReadFull(r.br, crlf); err != nil {
-		return err
+	n, err := io.ReadFull(r.br, crlf)
+	if err != nil {
+		return fmt.Errorf("failed to read CRLF terminator (read %d/2 bytes): %w", n, err)
 	}
 	
 	if !bytes.Equal(crlf, crlfBytes) {
-		return errors.New("expected CRLF terminator")
+		return fmt.Errorf("expected CRLF terminator [13, 10], got [%d, %d]", crlf[0], crlf[1])
 	}
 	
 	return nil

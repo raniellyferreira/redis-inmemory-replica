@@ -465,25 +465,38 @@ func (c *Client) performFullSync() error {
 		databases: c.databases,
 	}
 	
-	// Read RDB data length
-	response, err := c.reader.ReadNext()
+	// Create RDB stream reader that collects chunks
+	rdbBuffer := &rdbStreamBuffer{
+		chunks: make([][]byte, 0),
+		logger: c.logger,
+	}
+	
+	// Read RDB data as streaming bulk string
+	c.logger.Debug("Reading RDB data stream")
+	err := c.reader.ReadBulkString(func(chunk []byte) error {
+		if chunk == nil {
+			c.logger.Debug("Received null RDB chunk")
+			return nil
+		}
+		
+		c.logger.Debug("Received RDB chunk", "size", len(chunk))
+		
+		// Copy chunk to avoid buffer reuse issues
+		chunkCopy := make([]byte, len(chunk))
+		copy(chunkCopy, chunk)
+		rdbBuffer.chunks = append(rdbBuffer.chunks, chunkCopy)
+		rdbBuffer.totalSize += len(chunk)
+		
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to read RDB length: %w", err)
+		return fmt.Errorf("failed to read RDB data: %w", err)
 	}
 	
-	if response.Type != protocol.TypeBulkString {
-		return fmt.Errorf("expected bulk string for RDB, got %c", response.Type)
-	}
+	c.logger.Debug("RDB data reading completed", "totalSize", rdbBuffer.totalSize, "chunks", len(rdbBuffer.chunks))
 	
-	// Parse RDB from bulk string data
-	rdbReader := &rdbBulkStringReader{
-		reader: c.reader,
-		length: len(response.Data),
-		data:   response.Data,
-		pos:    0,
-	}
-	
-	if err := ParseRDB(rdbReader, handler); err != nil {
+	// Parse RDB from collected buffer
+	if err := ParseRDB(rdbBuffer, handler); err != nil {
 		return fmt.Errorf("RDB parsing failed: %w", err)
 	}
 	
@@ -702,16 +715,85 @@ func (r *rdbBulkStringReader) Read(p []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 	
+	// Ensure we don't read beyond the data buffer
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	
 	remaining := r.length - r.pos
+	dataRemaining := len(r.data) - r.pos
+	
+	// Use the smaller of remaining bytes or available data
+	actualRemaining := remaining
+	if dataRemaining < remaining {
+		actualRemaining = dataRemaining
+	}
+	
 	toCopy := len(p)
-	if toCopy > remaining {
-		toCopy = remaining
+	if toCopy > actualRemaining {
+		toCopy = actualRemaining
+	}
+	
+	if toCopy <= 0 {
+		return 0, io.EOF
+	}
+	
+	// Validate slice bounds before copying
+	if r.pos+toCopy > len(r.data) {
+		return 0, fmt.Errorf("buffer overflow: attempting to read beyond data bounds (pos=%d, toCopy=%d, dataLen=%d)", r.pos, toCopy, len(r.data))
 	}
 	
 	copy(p, r.data[r.pos:r.pos+toCopy])
 	r.pos += toCopy
 	
 	return toCopy, nil
+}
+
+// rdbStreamBuffer collects RDB data chunks and provides a Reader interface
+type rdbStreamBuffer struct {
+	chunks    [][]byte
+	totalSize int
+	pos       int
+	chunkIdx  int
+	chunkPos  int
+	logger    Logger
+}
+
+func (r *rdbStreamBuffer) Read(p []byte) (n int, err error) {
+	if r.chunkIdx >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	
+	totalCopied := 0
+	
+	for totalCopied < len(p) && r.chunkIdx < len(r.chunks) {
+		currentChunk := r.chunks[r.chunkIdx]
+		
+		// Check if we've read all data from current chunk
+		if r.chunkPos >= len(currentChunk) {
+			r.chunkIdx++
+			r.chunkPos = 0
+			continue
+		}
+		
+		// Copy data from current chunk
+		remaining := len(currentChunk) - r.chunkPos
+		toCopy := len(p) - totalCopied
+		if toCopy > remaining {
+			toCopy = remaining
+		}
+		
+		copy(p[totalCopied:], currentChunk[r.chunkPos:r.chunkPos+toCopy])
+		r.chunkPos += toCopy
+		totalCopied += toCopy
+		r.pos += toCopy
+	}
+	
+	if totalCopied == 0 {
+		return 0, io.EOF
+	}
+	
+	return totalCopied, nil
 }
 
 // defaultLogger is a simple logger implementation
