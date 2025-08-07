@@ -11,14 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     services:
       redis:
-        image: redis:latest
+        image: redis:7.2-alpine  # Use stable Redis 7.2 version
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+          --health-start-period 30s
 
     steps:
     - uses: actions/checkout@v4
@@ -44,11 +45,22 @@ jobs:
     
     - name: Wait for Redis
       run: |
-        until redis-cli ping; do
-          echo "Waiting for Redis..."
-          sleep 1
+        echo "Waiting for Redis to be ready..."
+        for i in {1..60}; do
+          if redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo "Redis is ready!"
+            redis-cli INFO server | grep redis_version || true
+            break
+          fi
+          echo "Attempt $i/60: waiting for Redis..."
+          sleep 2
         done
-        echo "Redis is ready!"
+        
+        # Final check
+        if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+          echo "Redis failed to start properly"
+          exit 1
+        fi
     
     - name: Run E2E Tests
       run: go test -v -run TestEndToEndWithRealRedis
@@ -95,16 +107,27 @@ jobs:
         # Stop any existing Redis and start with auth using Docker
         docker stop redis-auth || true
         docker rm redis-auth || true
-        docker run -d --name redis-auth -p 6379:6379 redis:latest redis-server --requirepass testpassword123
-        sleep 5
+        docker run -d --name redis-auth -p 6379:6379 redis:7.2-alpine redis-server --requirepass testpassword123
+        
+        echo "Waiting for Redis with auth to be ready..."
+        for i in {1..30}; do
+          if redis-cli -a testpassword123 --no-auth-warning ping 2>/dev/null | grep -q PONG; then
+            echo "Redis with auth is ready!"
+            break
+          fi
+          echo "Attempt $i/30: waiting for Redis with auth..."
+          sleep 2
+        done
     
     - name: Wait for Redis with auth
       run: |
-        until redis-cli -a testpassword123 ping; do
-          echo "Waiting for Redis with auth..."
-          sleep 1
-        done
-        echo "Redis with auth is ready!"
+        # Final verification that Redis with auth is working
+        if ! redis-cli -a testpassword123 --no-auth-warning ping 2>/dev/null | grep -q PONG; then
+          echo "Redis with auth failed to start properly"
+          docker logs redis-auth
+          exit 1
+        fi
+        echo "Redis with auth verified!"
     
     - name: Run E2E Tests with Authentication
       run: go test -v -run TestEndToEndWithRealRedis

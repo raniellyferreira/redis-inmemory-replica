@@ -13,6 +13,10 @@ import (
 const (
 	// RDB version and opcodes
 	RDBVersion9       = 9
+	RDBVersion10      = 10
+	RDBVersion11      = 11  
+	RDBVersion12      = 12
+	MaxSupportedRDBVersion = 12  // Support up to Redis 7.x RDB format
 	RDBOpcodeEOF      = 0xFF
 	RDBOpcodeDB       = 0xFE
 	RDBOpcodeExpiry   = 0xFD
@@ -86,8 +90,8 @@ func (p *RDBParser) Parse() error {
 		return fmt.Errorf("invalid RDB version: %s", header[5:])
 	}
 
-	if version > RDBVersion9 {
-		return fmt.Errorf("unsupported RDB version: %d", version)
+	if version > MaxSupportedRDBVersion {
+		return fmt.Errorf("unsupported RDB version: %d (max supported: %d)", version, MaxSupportedRDBVersion)
 	}
 
 	// Parse RDB content

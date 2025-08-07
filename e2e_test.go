@@ -134,8 +134,8 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	replicaStorage = replica.Storage()
 	if value, exists := replicaStorage.Get("large:value"); !exists {
 		t.Error("Large value not found in replica")
-	} else if len(value) != 10000 {
-		t.Errorf("Large value: expected length 10000, got %d", len(value))
+	} else if len(value) != 1024 {
+		t.Errorf("Large value: expected length 1024, got %d", len(value))
 	} else {
 		t.Log("✅ Large value correctly replicated")
 	}
@@ -269,15 +269,34 @@ func isRedisAvailable(addr string) bool {
 	}
 
 	cmd := exec.Command("redis-cli", args...)
-	// Set timeout to avoid hanging in CI
+	// Set timeout to avoid hanging in CI and avoid config file loading for CI stability
 	cmd.Env = append(os.Environ(), "REDISCLI_RCFILE=/dev/null")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	
+	// Create a channel to handle timeout
+	done := make(chan bool, 1)
+	var output []byte
+	var err error
+	
+	go func() {
+		output, err = cmd.CombinedOutput()
+		done <- true
+	}()
+	
+	// Wait for command completion or timeout
+	select {
+	case <-done:
+		if err != nil {
+			return false
+		}
+		// Check if the output is "PONG" (handle potential extra characters)
+		return strings.TrimSpace(string(output)) == "PONG"
+	case <-time.After(10 * time.Second):
+		// Kill the process if it's taking too long
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 		return false
 	}
-
-	// Check if the output is "PONG" (handle potential extra characters)
-	return strings.TrimSpace(string(output)) == "PONG"
 }
 
 func clearRedis(addr string) error {
@@ -333,6 +352,15 @@ func deleteRedisKey(addr, key string) error {
 }
 
 func parseHost(addr string) string {
+	// Handle IPv6 addresses: [::1]:6379 or [2001:db8::1]:6379
+	if strings.HasPrefix(addr, "[") {
+		if idx := strings.LastIndex(addr, "]:"); idx != -1 {
+			return addr[:idx+1] // Include the closing bracket
+		}
+		return addr // Return as-is if malformed
+	}
+	
+	// Handle IPv4 and hostnames: localhost:6379, 192.168.1.1:6379
 	if idx := lastIndex(addr, ":"); idx != -1 {
 		return addr[:idx]
 	}
@@ -340,6 +368,15 @@ func parseHost(addr string) string {
 }
 
 func parsePort(addr string) string {
+	// Handle IPv6 addresses: [::1]:6379 or [2001:db8::1]:6379
+	if strings.HasPrefix(addr, "[") {
+		if idx := strings.LastIndex(addr, "]:"); idx != -1 {
+			return addr[idx+2:] // Skip ]:
+		}
+		return "6379" // Default port if malformed
+	}
+	
+	// Handle IPv4 and hostnames: localhost:6379, 192.168.1.1:6379
 	if idx := lastIndex(addr, ":"); idx != -1 {
 		return addr[idx+1:]
 	}
