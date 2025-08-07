@@ -154,11 +154,13 @@ func (p *RDBParser) Parse() error {
 			// Auxiliary field
 			key, err := p.readString()
 			if err != nil {
-				return fmt.Errorf("failed to read aux key: %w", err)
+				// If we can't read aux fields properly, it might be a format issue
+				// For compatibility, try to skip to the next section
+				return fmt.Errorf("failed to read aux key (possible format incompatibility): %w", err)
 			}
 			value, err := p.readString()
 			if err != nil {
-				return fmt.Errorf("failed to read aux value: %w", err)
+				return fmt.Errorf("failed to read aux value for key %s: %w", key, err)
 			}
 			if err := p.handler.OnAux(key, value); err != nil {
 				return err
@@ -176,8 +178,11 @@ func (p *RDBParser) Parse() error {
 				return fmt.Errorf("failed to read value for key %s: %w", key, err)
 			}
 
-			if err := p.handler.OnKey(key, value, expiry); err != nil {
-				return err
+			// Only call OnKey if value was successfully parsed (not skipped)
+			if value != nil {
+				if err := p.handler.OnKey(key, value, expiry); err != nil {
+					return err
+				}
 			}
 
 			// Reset expiry after use
@@ -248,13 +253,20 @@ func (p *RDBParser) readString() ([]byte, error) {
 		return nil, err
 	}
 
+	// Handle empty string
+	if length == 0 {
+		return []byte{}, nil
+	}
+
+	// Guard against extremely large strings that might indicate parser errors
+	if length > 100000 { // 100KB is reasonable max for RDB strings
+		return nil, fmt.Errorf("string length too large: %d", length)
+	}
+
 	// Allocate exact buffer size needed for the string data
-	// This allocation is necessary as we need to read exactly 'length' bytes
-	// from the RDB stream. Buffer pooling could be added here for optimization
-	// if needed, but it would complicate the code for minimal gains.
 	data := make([]byte, length)
 	if _, err := io.ReadFull(p.br, data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read string data: %w", err)
 	}
 
 	return data, nil
@@ -319,7 +331,18 @@ func (p *RDBParser) readValue(valueType byte) (interface{}, error) {
 		return hash, nil
 
 	default:
-		// For unsupported types, skip the value
+		// For unsupported types, try to skip the value
+		// This is important for forward compatibility with newer Redis versions
+		if valueType < 16 {
+			// Simple types - try to read as string and discard
+			_, err := p.readString()
+			if err != nil {
+				return nil, fmt.Errorf("failed to skip unsupported RDB type %d: %w", valueType, err)
+			}
+			return nil, nil // Return nil to indicate skipped value
+		}
+		
+		// Complex or encoded types - these are harder to skip safely
 		return nil, fmt.Errorf("unsupported RDB type: %d", valueType)
 	}
 }

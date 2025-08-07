@@ -3,10 +3,11 @@ package redisreplica_test
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,9 +46,12 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	// Track sync completion
 	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
 	replica.OnSyncComplete(func() {
 		t.Log("✅ Initial synchronization completed")
-		close(syncCompleted)
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
 	})
 
 	// Start replication
@@ -261,93 +265,101 @@ func TestRDBParsingRobustness(t *testing.T) {
 // Helper functions
 
 func isRedisAvailable(addr string) bool {
-	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "ping"}
-
-	// Add password if available
-	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
-		args = append([]string{"-a", password}, args...)
-	}
-
-	cmd := exec.Command("redis-cli", args...)
-	// Set timeout to avoid hanging in CI and avoid config file loading for CI stability
-	cmd.Env = append(os.Environ(), "REDISCLI_RCFILE=/dev/null")
-	
-	// Create a channel to handle timeout
-	done := make(chan bool, 1)
-	var output []byte
-	var err error
-	
-	go func() {
-		output, err = cmd.CombinedOutput()
-		done <- true
-	}()
-	
-	// Wait for command completion or timeout
-	select {
-	case <-done:
-		if err != nil {
-			return false
-		}
-		// Check if the output is "PONG" (handle potential extra characters)
-		return strings.TrimSpace(string(output)) == "PONG"
-	case <-time.After(10 * time.Second):
-		// Kill the process if it's taking too long
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
 		return false
 	}
+	defer conn.Close()
+
+	// Send PING command
+	_, err = conn.Write([]byte("PING\r\n"))
+	if err != nil {
+		return false
+	}
+
+	// Read response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := conn.Read(buf)
+	if err != nil {
+		return false
+	}
+
+	// Check if response contains PONG
+	return strings.Contains(string(buf[:n]), "PONG")
 }
 
 func clearRedis(addr string) error {
-	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "flushall"}
-
-	// Add password if available
-	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
-		args = append([]string{"-a", password}, args...)
-	}
-
-	cmd := exec.Command("redis-cli", args...)
-	// Set timeout and avoid config file loading for CI stability
-	cmd.Env = append(os.Environ(), "REDISCLI_RCFILE=/dev/null")
-	output, err := cmd.CombinedOutput()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		return fmt.Errorf("redis flushall failed: %v, output: %s", err, strings.TrimSpace(string(output)))
+		return err
 	}
+	defer conn.Close()
+
+	// Send FLUSHALL command
+	_, err = conn.Write([]byte("FLUSHALL\r\n"))
+	if err != nil {
+		return err
+	}
+
+	// Read response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func setRedisKey(addr, key, value string) error {
-	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "set", key, value}
-
-	// Add password if available
-	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
-		args = append([]string{"-a", password}, args...)
-	}
-
-	cmd := exec.Command("redis-cli", args...)
-	cmd.Env = append(os.Environ(), "REDISCLI_RCFILE=/dev/null")
-	output, err := cmd.CombinedOutput()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		return fmt.Errorf("redis set failed: %v, output: %s", err, strings.TrimSpace(string(output)))
+		return err
 	}
+	defer conn.Close()
+
+	// Send SET command
+	cmd := fmt.Sprintf("SET %s %s\r\n", key, value)
+	_, err = conn.Write([]byte(cmd))
+	if err != nil {
+		return err
+	}
+
+	// Read response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func deleteRedisKey(addr, key string) error {
-	args := []string{"-h", parseHost(addr), "-p", parsePort(addr), "del", key}
-
-	// Add password if available
-	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
-		args = append([]string{"-a", password}, args...)
-	}
-
-	cmd := exec.Command("redis-cli", args...)
-	cmd.Env = append(os.Environ(), "REDISCLI_RCFILE=/dev/null")
-	output, err := cmd.CombinedOutput()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		return fmt.Errorf("redis del failed: %v, output: %s", err, strings.TrimSpace(string(output)))
+		return err
 	}
+	defer conn.Close()
+
+	// Send DEL command
+	cmd := fmt.Sprintf("DEL %s\r\n", key)
+	_, err = conn.Write([]byte(cmd))
+	if err != nil {
+		return err
+	}
+
+	// Read response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
