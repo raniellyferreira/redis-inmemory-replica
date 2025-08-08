@@ -103,8 +103,9 @@ setup_test_env() {
     # Clean up any existing Redis containers from previous runs
     cleanup_redis_containers
     
-    # Create test data directory
+    # Create test data directory with proper permissions for Redis container
     mkdir -p "$TEST_DATA_DIR"
+    chmod 777 "$TEST_DATA_DIR"  # Allow Redis container to write
     
     # Download Go dependencies
     cd "$PROJECT_ROOT"
@@ -179,8 +180,10 @@ start_redis() {
         --name "$container_name" \
         -p "$port:6379" \
         -v "$TEST_DATA_DIR:/data" \
+        --tmpfs /tmp:rw,noexec,nosuid,size=100m \
         "$image_tag" \
         redis-server \
+        --dir /data \
         --save 60 1 \
         --appendonly yes \
         --appendfsync everysec \
@@ -319,8 +322,8 @@ run_tests() {
     export REDIS_ADDR="localhost:$port"
     export REDIS_VERSION="$version"
     
-    # Clean any existing test-data directory before tests
-    sudo rm -rf test-data/ 2>/dev/null || rm -rf test-data/ 2>/dev/null || true
+    # Ensure test-data directory exists with proper permissions
+    mkdir -p test-data && chmod 777 test-data
     
     # Run E2E tests
     log_info "Running E2E tests..."
@@ -331,9 +334,6 @@ run_tests() {
         return 1
     fi
     
-    # Clean test-data again between tests
-    sudo rm -rf test-data/ 2>/dev/null || rm -rf test-data/ 2>/dev/null || true
-    
     # Run RDB parsing tests - skip if they don't exist or consistently fail
     log_info "Running RDB parsing tests..."
     if go test -v -timeout 60s -run TestRDBParsingRobustness . 2>/dev/null; then
@@ -342,9 +342,6 @@ run_tests() {
         log_warning "RDB parsing tests failed or not found for Redis $version (non-critical)"
     fi
     
-    # Clean test-data again
-    sudo rm -rf test-data/ 2>/dev/null || rm -rf test-data/ 2>/dev/null || true
-    
     # Run performance benchmark
     log_info "Running performance benchmark..."
     if go test -v -bench BenchmarkReplicationThroughput -benchtime=3s -timeout 60s . 2>/dev/null; then
@@ -352,9 +349,6 @@ run_tests() {
     else
         log_warning "Performance benchmark failed for Redis $version (non-critical)"
     fi
-    
-    # Final cleanup
-    sudo rm -rf test-data/ 2>/dev/null || rm -rf test-data/ 2>/dev/null || true
     
     return 0
 }
