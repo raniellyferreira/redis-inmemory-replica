@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create replica:", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	fmt.Println("📊 Configuration:")
 	fmt.Printf("  Master: %s\n", masterAddr)
