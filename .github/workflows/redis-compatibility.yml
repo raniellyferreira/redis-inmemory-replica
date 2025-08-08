@@ -228,6 +228,7 @@ jobs:
       env:
         REDIS_ADDR: localhost:6379
         REDIS_PASSWORD: testpassword123
+        REDIS_FAKE_P: test
         REDIS_VERSION: ${{ matrix.redis-version }}
 
     - name: Cleanup Redis container

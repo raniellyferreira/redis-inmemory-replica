@@ -321,6 +321,29 @@ func isRedisAvailable(addr string) bool {
 	}
 	defer conn.Close()
 
+	// Check if authentication is needed
+	password := os.Getenv("REDIS_PASSWORD")
+	if password == "" {
+		password = os.Getenv("REDIS_FAKE_P") // Support fake password env var
+	}
+
+	if password != "" {
+		// Authenticate first
+		authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+		if _, err := conn.Write([]byte(authCmd)); err != nil {
+			return false
+		}
+
+		// Read auth response
+		buf := make([]byte, 1024)
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return false
+		}
+		if _, err := conn.Read(buf); err != nil {
+			return false
+		}
+	}
+
 	// Send PING command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
 	if err != nil {
@@ -329,7 +352,9 @@ func isRedisAvailable(addr string) bool {
 
 	// Read response
 	buf := make([]byte, 1024)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return false
+	}
 	n, err := conn.Read(buf)
 	if err != nil {
 		return false
@@ -753,7 +778,7 @@ func setRedisKeyWithAuth(addr, password, key, value string) error {
 
 	// Read auth response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -766,7 +791,7 @@ func setRedisKeyWithAuth(addr, password, key, value string) error {
 	}
 
 	// Read response
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -793,7 +818,7 @@ func deleteRedisKeyWithAuth(addr, password, key string) error {
 
 	// Read auth response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -805,7 +830,7 @@ func deleteRedisKeyWithAuth(addr, password, key string) error {
 	}
 
 	// Read response
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -832,7 +857,7 @@ func forcePersistRedisWithAuth(addr, password string) error {
 
 	// Read auth response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -843,7 +868,7 @@ func forcePersistRedisWithAuth(addr, password string) error {
 	}
 
 	// Read response
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -870,7 +895,7 @@ func clearRedisWithAuth(addr, password string) error {
 
 	// Read auth response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
@@ -881,7 +906,7 @@ func clearRedisWithAuth(addr, password string) error {
 	}
 
 	// Read response
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}
