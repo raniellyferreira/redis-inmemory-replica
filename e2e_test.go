@@ -22,6 +22,8 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		redisAddr = "localhost:6379"
 	}
 
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
 	// Check if Redis is available
 	if !isRedisAvailable(redisAddr) {
 		t.Skip("Redis not available at", redisAddr, "- skipping e2e test. Set REDIS_ADDR environment variable or start Redis at localhost:6379")
@@ -30,15 +32,20 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	t.Logf("Running end-to-end test with Redis at %s", redisAddr)
 
 	// Clear any existing data in Redis
-	if err := clearRedis(redisAddr); err != nil {
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
 		t.Fatalf("Failed to clear Redis: %v", err)
 	}
 
-	// Create replica
-	replica, err := redisreplica.New(
+	// Create replica with authentication if needed
+	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
 		redisreplica.WithSyncTimeout(30*time.Second),
-	)
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
@@ -88,7 +95,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	}
 
 	for key, value := range testKeys {
-		if err := setRedisKey(redisAddr, key, value); err != nil {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 			t.Errorf("Failed to set key %s: %v", key, err)
 		}
 	}
@@ -142,7 +149,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	// Reduced size for CI stability - 1KB is sufficient for buffer boundary testing
 	largeValue := strings.Repeat("X", 1024) // 1KB value
 
-	if err := setRedisKey(redisAddr, "large:value", largeValue); err != nil {
+	if err := setRedisKeyWithAuth(redisAddr, redisPassword, "large:value", largeValue); err != nil {
 		t.Errorf("Failed to set large value: %v", err)
 	}
 
@@ -164,7 +171,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		key := fmt.Sprintf("rapid:update:%d", i)
 		value := fmt.Sprintf("value_%d", i)
-		if err := setRedisKey(redisAddr, key, value); err != nil {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 			t.Errorf("Failed to set rapid update key %s: %v", key, err)
 		}
 	}
@@ -205,6 +212,8 @@ func TestRDBParsingRobustness(t *testing.T) {
 		redisAddr = "localhost:6379"
 	}
 
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
 	if !isRedisAvailable(redisAddr) {
 		t.Skip("Redis not available at", redisAddr, "- skipping RDB parsing test")
 	}
@@ -212,7 +221,7 @@ func TestRDBParsingRobustness(t *testing.T) {
 	t.Log("Testing RDB parsing robustness")
 
 	// Clear Redis and populate with diverse data types
-	if err := clearRedis(redisAddr); err != nil {
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
 		t.Fatalf("Failed to clear Redis: %v", err)
 	}
 
@@ -229,25 +238,30 @@ func TestRDBParsingRobustness(t *testing.T) {
 
 	t.Log("Populating Redis with test data...")
 	for key, value := range testData {
-		if err := setRedisKey(redisAddr, key, fmt.Sprintf("%v", value)); err != nil {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, fmt.Sprintf("%v", value)); err != nil {
 			t.Errorf("Failed to set key %s: %v", key, err)
 		}
 	}
 
 	// Force Redis to persist data to RDB before starting replication
 	// This ensures all test data is available during full sync
-	if err := forcePersistRedis(redisAddr); err != nil {
+	if err := forcePersistRedisWithAuth(redisAddr, redisPassword); err != nil {
 		t.Errorf("Failed to force Redis persistence: %v", err)
 	}
 
 	// Small delay to ensure persistence is complete
 	time.Sleep(100 * time.Millisecond)
 
-	// Create replica and test full sync
-	replica, err := redisreplica.New(
+	// Create replica and test full sync with authentication if needed
+	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
 		redisreplica.WithSyncTimeout(30*time.Second),
-	)
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
@@ -362,11 +376,32 @@ func isRedisAvailable(addr string) bool {
 }
 
 func clearRedis(addr string) error {
+	return clearRedisWithAuth(addr, "")
+}
+
+func clearRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+
+	// Authenticate if password is provided
+	if password != "" {
+		authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+		if _, err := conn.Write([]byte(authCmd)); err != nil {
+			return err
+		}
+
+		// Read auth response
+		buf := make([]byte, 1024)
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return err
+		}
+		if _, err := conn.Read(buf); err != nil {
+			return err
+		}
+	}
 
 	// Send FLUSHALL command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n"))
@@ -386,11 +421,32 @@ func clearRedis(addr string) error {
 }
 
 func setRedisKey(addr, key, value string) error {
+	return setRedisKeyWithAuth(addr, "", key, value)
+}
+
+func setRedisKeyWithAuth(addr, password, key, value string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+
+	// Authenticate if password is provided
+	if password != "" {
+		authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+		if _, err := conn.Write([]byte(authCmd)); err != nil {
+			return err
+		}
+
+		// Read auth response
+		buf := make([]byte, 1024)
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return err
+		}
+		if _, err := conn.Read(buf); err != nil {
+			return err
+		}
+	}
 
 	// Send SET command using proper RESP protocol (array of bulk strings)
 	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
@@ -437,11 +493,32 @@ func deleteRedisKey(addr, key string) error {
 }
 
 func forcePersistRedis(addr string) error {
+	return forcePersistRedisWithAuth(addr, "")
+}
+
+func forcePersistRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+
+	// Authenticate if password is provided
+	if password != "" {
+		authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+		if _, err := conn.Write([]byte(authCmd)); err != nil {
+			return err
+		}
+
+		// Read auth response
+		buf := make([]byte, 1024)
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return err
+		}
+		if _, err := conn.Read(buf); err != nil {
+			return err
+		}
+	}
 
 	// Send BGSAVE command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$6\r\nBGSAVE\r\n"))
@@ -451,6 +528,50 @@ func forcePersistRedis(addr string) error {
 
 	// Read response
 	buf := make([]byte, 1024)
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func deleteRedisKeyWithAuth(addr, password, key string) error {
+	if password == "" {
+		return deleteRedisKey(addr, key)
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	// Authenticate if password is provided
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		return err
+	}
+
+	// Read auth response
+	buf := make([]byte, 1024)
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	// Send DEL command using proper RESP protocol
+	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
+	_, err = conn.Write([]byte(cmd))
+	if err != nil {
+		return err
+	}
+
+	// Read response
+	buf = make([]byte, 1024)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(buf)
 	if err != nil {
@@ -754,163 +875,6 @@ func TestRedis7xFeatures(t *testing.T) {
 	}
 }
 
-// Helper functions with authentication support
-
-func setRedisKeyWithAuth(addr, password, key, value string) error {
-	if password == "" {
-		return setRedisKey(addr, key, value)
-	}
-
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-
-	// Authenticate first
-	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
-	if _, err := conn.Write([]byte(authCmd)); err != nil {
-		return err
-	}
-
-	// Read auth response
-	buf := make([]byte, 1024)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	// Send SET command
-	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
-		len(key), key, len(value), value)
-	if _, err := conn.Write([]byte(cmd)); err != nil {
-		return err
-	}
-
-	// Read response
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func deleteRedisKeyWithAuth(addr, password, key string) error {
-	if password == "" {
-		return deleteRedisKey(addr, key)
-	}
-
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-
-	// Authenticate first
-	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
-	if _, err := conn.Write([]byte(authCmd)); err != nil {
-		return err
-	}
-
-	// Read auth response
-	buf := make([]byte, 1024)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	// Send DEL command
-	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
-	if _, err := conn.Write([]byte(cmd)); err != nil {
-		return err
-	}
-
-	// Read response
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func forcePersistRedisWithAuth(addr, password string) error {
-	if password == "" {
-		return forcePersistRedis(addr)
-	}
-
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-
-	// Authenticate first
-	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
-	if _, err := conn.Write([]byte(authCmd)); err != nil {
-		return err
-	}
-
-	// Read auth response
-	buf := make([]byte, 1024)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	// Send BGSAVE command
-	if _, err := conn.Write([]byte("*1\r\n$6\r\nBGSAVE\r\n")); err != nil {
-		return err
-	}
-
-	// Read response
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func clearRedisWithAuth(addr, password string) error {
-	if password == "" {
-		return clearRedis(addr)
-	}
-
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-
-	// Authenticate first
-	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
-	if _, err := conn.Write([]byte(authCmd)); err != nil {
-		return err
-	}
-
-	// Read auth response
-	buf := make([]byte, 1024)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	// Send FLUSHALL command
-	if _, err := conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n")); err != nil {
-		return err
-	}
-
-	// Read response
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Read(buf); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // Benchmark test for replication performance
 func BenchmarkReplicationThroughput(b *testing.B) {
 	redisAddr := os.Getenv("REDIS_ADDR")
@@ -918,19 +882,26 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 		redisAddr = "localhost:6379"
 	}
 
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
 	if !isRedisAvailable(redisAddr) {
 		b.Skip("Redis not available - skipping benchmark")
 	}
 
 	// Clear Redis
-	if err := clearRedis(redisAddr); err != nil {
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
 		b.Fatalf("Failed to clear Redis: %v", err)
 	}
 
-	// Create replica
-	replica, err := redisreplica.New(
+	// Create replica with authentication if needed
+	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
-	)
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
 	if err != nil {
 		b.Fatalf("Failed to create replica: %v", err)
 	}
@@ -953,7 +924,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 		key := "bench:key:" + strconv.Itoa(i)
 		value := "benchmark_value_" + strconv.Itoa(i)
 
-		if err := setRedisKey(redisAddr, key, value); err != nil {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 			b.Fatalf("Failed to set key: %v", err)
 		}
 	}
