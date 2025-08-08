@@ -1,0 +1,22 @@
+# act Configuration for Redis In-Memory Replica
+
+# Default platform - use Ubuntu for consistency with GitHub Actions
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest
+
+# Local environment variables for testing
+--env REDIS_ADDR=localhost:6379
+--env REDIS_PASSWORD=
+
+# Docker network settings for Redis connectivity
+--network host
+
+# Reusable workflows
+--use-gitignore=true
+--rm=true
+
+# Resource limits (adjust based on your system)
+--memory=4g
+--cpus=2
+
+# Verbose output for debugging
+--verbose

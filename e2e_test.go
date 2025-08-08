@@ -438,6 +438,457 @@ func forcePersistRedis(addr string) error {
 	return nil
 }
 
+// TestFullSyncAndIncremental tests both full sync and incremental replication
+func TestFullSyncAndIncremental(t *testing.T) {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	if !isRedisAvailable(redisAddr) {
+		t.Skip("Redis not available at", redisAddr, "- skipping full sync + incremental test")
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	
+	t.Log("Testing full sync followed by incremental replication")
+
+	// Phase 1: Prepare initial data for full sync
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Fatalf("Failed to clear Redis: %v", err)
+	}
+
+	// Set initial data
+	initialData := map[string]string{
+		"init:key1": "initial_value1",
+		"init:key2": "initial_value2",
+		"init:key3": "initial_value3",
+	}
+
+	for key, value := range initialData {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+			t.Errorf("Failed to set initial key %s: %v", key, err)
+		}
+	}
+
+	// Force persistence to ensure data is in RDB
+	if err := forcePersistRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Errorf("Failed to force Redis persistence: %v", err)
+	}
+	
+	time.Sleep(200 * time.Millisecond) // Wait for persistence
+
+	// Phase 2: Start replica and test full sync
+	var replicaOptions []redisreplica.Option
+	replicaOptions = append(replicaOptions, redisreplica.WithMaster(redisAddr))
+	replicaOptions = append(replicaOptions, redisreplica.WithSyncTimeout(30*time.Second))
+	
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
+	if err != nil {
+		t.Fatalf("Failed to create replica: %v", err)
+	}
+	defer replica.Close()
+
+	// Track sync completion
+	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
+	replica.OnSyncComplete(func() {
+		t.Log("✅ Full sync completed")
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
+	})
+
+	// Start replication
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	if err := replica.Start(ctx); err != nil {
+		t.Fatalf("Failed to start replica: %v", err)
+	}
+
+	// Wait for full sync
+	select {
+	case <-syncCompleted:
+		t.Log("Full sync completed successfully")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Full sync timeout")
+	}
+
+	// Verify full sync data
+	storage := replica.Storage()
+	for key, expectedValue := range initialData {
+		if value, exists := storage.Get(key); !exists {
+			t.Errorf("Key %s not found after full sync", key)
+		} else if string(value) != expectedValue {
+			t.Errorf("Key %s: expected %s, got %s", key, expectedValue, string(value))
+		}
+	}
+
+	// Phase 3: Test incremental replication
+	t.Log("Testing incremental replication...")
+	time.Sleep(2 * time.Second) // Ensure streaming is stable
+
+	incrementalData := map[string]string{
+		"incr:key1": "incremental_value1",
+		"incr:key2": "incremental_value2",
+		"incr:key3": "incremental_value3",
+	}
+
+	for key, value := range incrementalData {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+			t.Errorf("Failed to set incremental key %s: %v", key, err)
+		}
+	}
+
+	// Wait for incremental replication
+	time.Sleep(3 * time.Second)
+
+	// Verify incremental data
+	for key, expectedValue := range incrementalData {
+		if value, exists := storage.Get(key); !exists {
+			t.Errorf("Incremental key %s not found", key)
+		} else if string(value) != expectedValue {
+			t.Errorf("Incremental key %s: expected %s, got %s", key, expectedValue, string(value))
+		}
+	}
+
+	// Phase 4: Test updates and deletions
+	t.Log("Testing incremental updates and deletions...")
+	
+	// Update an initial key
+	if err := setRedisKeyWithAuth(redisAddr, redisPassword, "init:key1", "updated_value"); err != nil {
+		t.Errorf("Failed to update key: %v", err)
+	}
+
+	// Delete an incremental key
+	if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, "incr:key2"); err != nil {
+		t.Errorf("Failed to delete key: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Verify update
+	if value, exists := storage.Get("init:key1"); !exists {
+		t.Error("Updated key not found")
+	} else if string(value) != "updated_value" {
+		t.Errorf("Key update failed: expected updated_value, got %s", string(value))
+	}
+
+	// Verify deletion
+	if _, exists := storage.Get("incr:key2"); exists {
+		t.Error("Deleted key still exists")
+	}
+
+	t.Log("✅ Full sync and incremental replication test completed successfully")
+}
+
+// TestRedis7xFeatures tests Redis 7.x specific features
+func TestRedis7xFeatures(t *testing.T) {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	if !isRedisAvailable(redisAddr) {
+		t.Skip("Redis not available at", redisAddr, "- skipping Redis 7.x features test")
+	}
+
+	redisVersion := os.Getenv("REDIS_VERSION")
+	if redisVersion == "" {
+		redisVersion = "7.x"
+	}
+
+	t.Logf("Testing Redis 7.x features with version %s", redisVersion)
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	// Clear Redis
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Fatalf("Failed to clear Redis: %v", err)
+	}
+
+	// Test various data types and encodings that might trigger the encoding 33 issue
+	testCases := map[string]string{
+		// Small integers (should use integer encoding)
+		"int:small":    "1",
+		"int:medium":   "12345",
+		"int:large":    "9223372036854775807", // Max int64
+		
+		// Strings that might trigger special encodings
+		"str:empty":    "",
+		"str:single":   "a",
+		"str:numbers":  "123456789012345678901234567890", // Long number string
+		
+		// Binary-like data
+		"bin:data":     string([]byte{0x00, 0x01, 0x02, 0x21, 0xFF}), // Include 0x21 (33)
+		
+		// Unicode and special characters
+		"unicode:emoji": "🚀💾📡",
+		"unicode:mixed": "Hello世界🌍",
+		
+		// Large strings that might be compressed
+		"large:string": string(make([]byte, 1000)), // 1KB of zeros
+		"large:text":   "Redis 7.x compatibility test " + string(make([]byte, 500)),
+	}
+
+	// Populate with test data
+	for key, value := range testCases {
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+			t.Errorf("Failed to set key %s: %v", key, err)
+		}
+	}
+
+	// Force persistence to test RDB parsing
+	if err := forcePersistRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Errorf("Failed to force Redis persistence: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Create replica
+	var replicaOptions []redisreplica.Option
+	replicaOptions = append(replicaOptions, redisreplica.WithMaster(redisAddr))
+	replicaOptions = append(replicaOptions, redisreplica.WithSyncTimeout(30*time.Second))
+	
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
+	if err != nil {
+		t.Fatalf("Failed to create replica: %v", err)
+	}
+	defer replica.Close()
+
+	// Start and wait for sync
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
+	replica.OnSyncComplete(func() {
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
+	})
+
+	if err := replica.Start(ctx); err != nil {
+		t.Fatalf("Failed to start replica: %v", err)
+	}
+
+	select {
+	case <-syncCompleted:
+		t.Log("✅ Redis 7.x features sync completed")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Redis 7.x features sync timeout")
+	}
+
+	// Verify all data was correctly handled
+	storage := replica.Storage()
+	time.Sleep(500 * time.Millisecond)
+
+	successCount := 0
+	for key, expectedValue := range testCases {
+		if value, exists := storage.Get(key); !exists {
+			t.Errorf("Redis 7.x feature key %s not found", key)
+		} else {
+			// For binary data, compare byte by byte
+			if key == "bin:data" {
+				if len(value) != len(expectedValue) {
+					t.Errorf("Binary data key %s length mismatch: expected %d, got %d", 
+						key, len(expectedValue), len(value))
+				} else {
+					match := true
+					for i := range expectedValue {
+						if value[i] != expectedValue[i] {
+							match = false
+							break
+						}
+					}
+					if !match {
+						t.Errorf("Binary data key %s content mismatch", key)
+					} else {
+						successCount++
+					}
+				}
+			} else if string(value) != expectedValue {
+				t.Errorf("Redis 7.x feature key %s: expected %v, got %v", 
+					key, expectedValue, string(value))
+			} else {
+				successCount++
+			}
+		}
+	}
+
+	t.Logf("✅ Redis 7.x features test: %d/%d test cases passed", successCount, len(testCases))
+	
+	if successCount == len(testCases) {
+		t.Log("✅ All Redis 7.x feature tests passed - no encoding 33 errors detected")
+	}
+}
+
+// Helper functions with authentication support
+
+func setRedisKeyWithAuth(addr, password, key, value string) error {
+	if password == "" {
+		return setRedisKey(addr, key, value)
+	}
+	
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Authenticate first
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		return err
+	}
+
+	// Read auth response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	// Send SET command
+	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+		len(key), key, len(value), value)
+	if _, err := conn.Write([]byte(cmd)); err != nil {
+		return err
+	}
+
+	// Read response
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func deleteRedisKeyWithAuth(addr, password, key string) error {
+	if password == "" {
+		return deleteRedisKey(addr, key)
+	}
+	
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Authenticate first
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		return err
+	}
+
+	// Read auth response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	// Send DEL command
+	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
+	if _, err := conn.Write([]byte(cmd)); err != nil {
+		return err
+	}
+
+	// Read response
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func forcePersistRedisWithAuth(addr, password string) error {
+	if password == "" {
+		return forcePersistRedis(addr)
+	}
+	
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Authenticate first
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		return err
+	}
+
+	// Read auth response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	// Send BGSAVE command
+	if _, err := conn.Write([]byte("*1\r\n$6\r\nBGSAVE\r\n")); err != nil {
+		return err
+	}
+
+	// Read response
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func clearRedisWithAuth(addr, password string) error {
+	if password == "" {
+		return clearRedis(addr)
+	}
+	
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Authenticate first
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		return err
+	}
+
+	// Read auth response
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	// Send FLUSHALL command
+	if _, err := conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n")); err != nil {
+		return err
+	}
+
+	// Read response
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(buf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Benchmark test for replication performance
 func BenchmarkReplicationThroughput(b *testing.B) {
 	redisAddr := os.Getenv("REDIS_ADDR")
