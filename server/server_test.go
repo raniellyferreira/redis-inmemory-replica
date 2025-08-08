@@ -119,7 +119,7 @@ func TestServer_BasicCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -167,7 +167,7 @@ func TestServer_LuaScripts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -258,7 +258,7 @@ func TestServer_ErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -307,7 +307,7 @@ func TestServer_Stats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -320,9 +320,9 @@ func TestServer_Stats(t *testing.T) {
 	defer client.Close()
 
 	// Send some commands
-	client.sendCommand("PING")
-	client.sendCommand("SET", "key", "value")
-	client.sendCommand("GET", "key")
+	_, _ = client.sendCommand("PING")
+	_, _ = client.sendCommand("SET", "key", "value")
+	_, _ = client.sendCommand("GET", "key")
 
 	// Check stats
 	stats := server.Stats()

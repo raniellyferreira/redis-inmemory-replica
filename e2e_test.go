@@ -329,7 +329,7 @@ func isRedisAvailable(addr string) bool {
 
 	// Read response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	n, err := conn.Read(buf)
 	if err != nil {
 		return false
@@ -354,7 +354,7 @@ func clearRedis(addr string) error {
 
 	// Read response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(buf)
 	if err != nil {
 		return err
@@ -380,7 +380,7 @@ func setRedisKey(addr, key, value string) error {
 
 	// Read response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(buf)
 	if err != nil {
 		return err
@@ -405,7 +405,7 @@ func deleteRedisKey(addr, key string) error {
 
 	// Read response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(buf)
 	if err != nil {
 		return err
@@ -429,7 +429,7 @@ func forcePersistRedis(addr string) error {
 
 	// Read response
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = conn.Read(buf)
 	if err != nil {
 		return err

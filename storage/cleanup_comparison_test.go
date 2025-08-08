@@ -131,7 +131,7 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 			expiredCount := int(totalKeys * expiredRatio)
 
 			// Clear any existing data
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Add expired keys
 			for i := 0; i < expiredCount; i++ {
@@ -212,7 +212,7 @@ func TestCleanupAdaptiveBehavior(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Configure cleanup
 			s.SetCleanupConfig(storage.CleanupConfig{

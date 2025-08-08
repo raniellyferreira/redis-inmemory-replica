@@ -125,7 +125,7 @@ func TestLuaEngine_RedisCommands(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset storage
-			stor.FlushAll()
+			_ = stor.FlushAll()
 			tt.setup()
 
 			result, err := engine.Eval(tt.script, tt.keys, tt.args)
@@ -168,7 +168,7 @@ func TestLuaEngine_RedisPCall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stor.FlushAll()
+			_ = stor.FlushAll()
 
 			result, err := engine.Eval(tt.script, tt.keys, tt.args)
 			if tt.hasError && err == nil {

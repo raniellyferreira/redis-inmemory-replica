@@ -233,7 +233,7 @@ func TestRecommendedConfiguration(t *testing.T) {
 			}
 			
 			// Clear previous data
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Setup scenario
 			setupTestData(s, scenario.keys, scenario.expiredRatio)
