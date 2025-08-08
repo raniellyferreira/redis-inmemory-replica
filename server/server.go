@@ -94,7 +94,7 @@ func (s *Server) Stop() error {
 	s.cancel()
 
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 
 	// Close all client connections
@@ -186,7 +186,7 @@ func (s *Server) handleNewClient(conn net.Conn) {
 // Close closes the client connection
 func (c *Client) Close() {
 	c.cancel()
-	c.conn.Close()
+	_ = c.conn.Close()
 	c.server.clients.Delete(c.conn)
 }
 
@@ -203,7 +203,7 @@ func (c *Client) handle() {
 		}
 
 		// Set read deadline
-		c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 		value, err := c.reader.ReadNext()
 		if err != nil {
@@ -525,8 +525,8 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 // Response writers
 
 func (c *Client) writeString(s string) {
-	c.writer.WriteSimpleString(s)
-	c.writer.Flush()
+	_ = c.writer.WriteSimpleString(s)
+	_ = c.writer.Flush()
 }
 
 func (c *Client) writeError(s string) {
@@ -536,23 +536,23 @@ func (c *Client) writeError(s string) {
 	// Clean error message by removing internal newlines which can break RESP protocol
 	cleanMsg := strings.ReplaceAll(s, "\n", " ")
 	cleanMsg = strings.ReplaceAll(cleanMsg, "\r", " ")
-	c.writer.WriteError(cleanMsg)
-	c.writer.Flush()
+	_ = c.writer.WriteError(cleanMsg)
+	_ = c.writer.Flush()
 }
 
 func (c *Client) writeBulkString(data []byte) {
-	c.writer.WriteBulkString(data)
-	c.writer.Flush()
+	_ = c.writer.WriteBulkString(data)
+	_ = c.writer.Flush()
 }
 
 func (c *Client) writeNull() {
-	c.writer.WriteNullBulkString()
-	c.writer.Flush()
+	_ = c.writer.WriteNullBulkString()
+	_ = c.writer.Flush()
 }
 
 func (c *Client) writeInteger(i int64) {
-	c.writer.WriteInteger(i)
-	c.writer.Flush()
+	_ = c.writer.WriteInteger(i)
+	_ = c.writer.Flush()
 }
 
 func (c *Client) writeArray(array []interface{}) {
@@ -561,8 +561,8 @@ func (c *Client) writeArray(array []interface{}) {
 	for i, item := range array {
 		values[i] = c.convertToValue(item)
 	}
-	c.writer.WriteArray(values)
-	c.writer.Flush()
+	_ = c.writer.WriteArray(values)
+	_ = c.writer.Flush()
 }
 
 func (c *Client) convertToValue(item interface{}) protocol.Value {
