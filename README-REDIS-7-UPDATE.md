@@ -245,7 +245,7 @@ scripts/
 
 ```bash
 # Prerequisites
-# - Go 1.23+
+# - Go 1.24.5+
 # - Docker
 # - redis-cli tools
 

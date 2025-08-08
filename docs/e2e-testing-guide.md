@@ -28,14 +28,14 @@ cd redis-inmemory-replica
 
 ### Required Software
 
-1. **Go 1.23+**
+1. **Go 1.24.5+**
    ```bash
    # Check Go version
    go version
    
    # Install if needed (example for Linux)
-   wget https://go.dev/dl/go1.23.linux-amd64.tar.gz
-   sudo tar -C /usr/local -xzf go1.23.linux-amd64.tar.gz
+   wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz
+   sudo tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz
    export PATH=$PATH:/usr/local/go/bin
    ```
 

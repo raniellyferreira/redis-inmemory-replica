@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SSL/TLS connections to Redis masters
 
 ### Dependencies
-- Go 1.23 or higher
+- Go 1.24.5 or higher
 - github.com/yuin/gopher-lua v1.1.1 (for Lua scripting support)
 
 ## [Unreleased]
