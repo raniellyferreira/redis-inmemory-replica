@@ -34,7 +34,6 @@ type Client struct {
 	// Replication state
 	replID      string
 	replOffset  int64
-	masterRunID string
 
 	// Control channels
 	ctx      context.Context
@@ -45,7 +44,6 @@ type Client struct {
 	runEnded int32 // atomic flag to prevent double doneChan close
 
 	// Sync control
-	syncMu  sync.Mutex // mutex for sync operations
 	syncing int32      // atomic flag indicating sync is in progress
 
 	// Statistics
@@ -860,53 +858,6 @@ func (h *rdbStorageHandler) OnEnd() error {
 	return nil
 }
 
-// rdbBulkStringReader reads RDB data from a bulk string
-type rdbBulkStringReader struct {
-	reader *protocol.Reader
-	length int
-	data   []byte
-	pos    int
-}
-
-func (r *rdbBulkStringReader) Read(p []byte) (n int, err error) {
-	if r.pos >= r.length {
-		return 0, io.EOF
-	}
-
-	// Ensure we don't read beyond the data buffer
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-
-	remaining := r.length - r.pos
-	dataRemaining := len(r.data) - r.pos
-
-	// Use the smaller of remaining bytes or available data
-	actualRemaining := remaining
-	if dataRemaining < remaining {
-		actualRemaining = dataRemaining
-	}
-
-	toCopy := len(p)
-	if toCopy > actualRemaining {
-		toCopy = actualRemaining
-	}
-
-	if toCopy <= 0 {
-		return 0, io.EOF
-	}
-
-	// Validate slice bounds before copying
-	if r.pos+toCopy > len(r.data) {
-		return 0, fmt.Errorf("buffer overflow: attempting to read beyond data bounds (pos=%d, toCopy=%d, dataLen=%d)", r.pos, toCopy, len(r.data))
-	}
-
-	copy(p, r.data[r.pos:r.pos+toCopy])
-	r.pos += toCopy
-
-	return toCopy, nil
-}
-
 // rdbStreamBuffer collects RDB data chunks and provides a Reader interface
 type rdbStreamBuffer struct {
 	chunks    [][]byte
@@ -1004,60 +955,3 @@ func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 	return nil
 }
 
-// refreshConnectionTimeouts refreshes connection timeouts during active operation
-func (c *Client) refreshConnectionTimeouts() error {
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
-
-	if conn == nil {
-		return fmt.Errorf("no active connection")
-	}
-
-	return c.setConnectionTimeouts(conn)
-}
-
-// validateTimeoutConfiguration validates all timeout settings
-func (c *Client) validateTimeoutConfiguration() error {
-	// Validate connect timeout
-	if c.connectTimeout > 0 {
-		if c.connectTimeout < 100*time.Millisecond {
-			return fmt.Errorf("connect timeout too small: %v (minimum: 100ms)", c.connectTimeout)
-		}
-		if c.connectTimeout > 5*time.Minute {
-			return fmt.Errorf("connect timeout too large: %v (maximum: 5m)", c.connectTimeout)
-		}
-	}
-
-	// Validate sync timeout
-	if c.syncTimeout > 0 {
-		if c.syncTimeout < time.Second {
-			return fmt.Errorf("sync timeout too small: %v (minimum: 1s)", c.syncTimeout)
-		}
-		if c.syncTimeout > time.Hour {
-			return fmt.Errorf("sync timeout too large: %v (maximum: 1h)", c.syncTimeout)
-		}
-	}
-
-	// Validate read timeout
-	if c.readTimeout > 0 {
-		if c.readTimeout < time.Millisecond {
-			return fmt.Errorf("read timeout too small: %v (minimum: 1ms)", c.readTimeout)
-		}
-		if c.readTimeout > 24*time.Hour {
-			return fmt.Errorf("read timeout too large: %v (maximum: 24h)", c.readTimeout)
-		}
-	}
-
-	// Validate write timeout
-	if c.writeTimeout > 0 {
-		if c.writeTimeout < time.Millisecond {
-			return fmt.Errorf("write timeout too small: %v (minimum: 1ms)", c.writeTimeout)
-		}
-		if c.writeTimeout > 24*time.Hour {
-			return fmt.Errorf("write timeout too large: %v (maximum: 24h)", c.writeTimeout)
-		}
-	}
-
-	return nil
-}

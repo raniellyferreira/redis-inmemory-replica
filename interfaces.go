@@ -100,30 +100,6 @@ func (s *ReplicationStats) GetCommandCount(cmd string) int64 {
 	return s.CommandsProcessed[cmd]
 }
 
-// incrementKeyCount increments the key count atomically
-func (s *ReplicationStats) incrementKeyCount(delta int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.KeyCount += delta
-}
-
-// updateMemoryUsage updates the memory usage atomically
-func (s *ReplicationStats) updateMemoryUsage(bytes int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.MemoryUsage = bytes
-}
-
-// incrementCommandCount increments the command count atomically
-func (s *ReplicationStats) incrementCommandCount(cmd string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.CommandsProcessed == nil {
-		s.CommandsProcessed = make(map[string]int64)
-	}
-	s.CommandsProcessed[cmd]++
-}
-
 // defaultLogger is a simple logger implementation using the standard log package
 type defaultLogger struct{}
 
@@ -157,14 +133,3 @@ func formatValue(v interface{}) string {
 		return ""
 	}
 }
-
-// noOpMetrics is a no-operation metrics collector
-type noOpMetrics struct{}
-
-func (n *noOpMetrics) RecordSyncDuration(duration time.Duration)                 {}
-func (n *noOpMetrics) RecordCommandProcessed(cmd string, duration time.Duration) {}
-func (n *noOpMetrics) RecordNetworkBytes(bytes int64)                            {}
-func (n *noOpMetrics) RecordKeyCount(count int64)                                {}
-func (n *noOpMetrics) RecordMemoryUsage(bytes int64)                             {}
-func (n *noOpMetrics) RecordReconnection()                                       {}
-func (n *noOpMetrics) RecordError(errorType string)                              {}

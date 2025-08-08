@@ -438,64 +438,6 @@ func forcePersistRedis(addr string) error {
 	return nil
 }
 
-func parseHost(addr string) string {
-	// Handle IPv6 addresses: [::1]:6379 or [2001:db8::1]:6379
-	if strings.HasPrefix(addr, "[") {
-		if idx := strings.LastIndex(addr, "]:"); idx != -1 {
-			return addr[:idx+1] // Include the closing bracket
-		}
-		return addr // Return as-is if malformed
-	}
-	
-	// Handle IPv4 and hostnames: localhost:6379, 192.168.1.1:6379
-	if idx := lastIndex(addr, ":"); idx != -1 {
-		return addr[:idx]
-	}
-	return addr
-}
-
-func parsePort(addr string) string {
-	// Handle IPv6 addresses: [::1]:6379 or [2001:db8::1]:6379
-	if strings.HasPrefix(addr, "[") {
-		if idx := strings.LastIndex(addr, "]:"); idx != -1 {
-			return addr[idx+2:] // Skip ]:
-		}
-		return "6379" // Default port if malformed
-	}
-	
-	// Handle IPv4 and hostnames: localhost:6379, 192.168.1.1:6379
-	if idx := lastIndex(addr, ":"); idx != -1 {
-		return addr[idx+1:]
-	}
-	return "6379"
-}
-
-func lastIndex(s, substr string) int {
-	for i := len(s) - len(substr); i >= 0; i-- {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
-
-// Custom logger for detailed debugging
-type debugLogger struct {
-	t *testing.T
-}
-
-func (l *debugLogger) Debug(msg string, fields ...interface{}) {
-	l.t.Logf("DEBUG: %s %v", msg, fields)
-}
-
-func (l *debugLogger) Info(msg string, fields ...interface{}) {
-	l.t.Logf("INFO: %s %v", msg, fields)
-}
-
-func (l *debugLogger) Error(msg string, fields ...interface{}) {
-	l.t.Logf("ERROR: %s %v", msg, fields)
-}
-
 // Benchmark test for replication performance
 func BenchmarkReplicationThroughput(b *testing.B) {
 	redisAddr := os.Getenv("REDIS_ADDR")

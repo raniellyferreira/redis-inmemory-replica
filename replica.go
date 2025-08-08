@@ -154,7 +154,8 @@ func (r *Replica) Start(ctx context.Context) error {
 
 	// TODO: Start server if enabled
 	if r.config.enableServer {
-		// Server implementation would go here
+		// Server implementation would go here - currently not implemented
+		r.config.logger.Debug("Server mode is enabled but not yet implemented")
 	}
 
 	return nil

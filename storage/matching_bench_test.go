@@ -6,43 +6,6 @@ import (
 	"testing"
 )
 
-// Benchmark data sets
-var (
-	// Simple patterns (single wildcard)
-	simplePatterns = []string{
-		"user:*",
-		"*:profile",
-		"cache:*:data",
-		"session:user:*",
-		"*",
-		"exact_match",
-	}
-
-	// Complex patterns (multiple wildcards, question marks)
-	complexPatterns = []string{
-		"user:*:profile:*",
-		"cache:*:*:data",
-		"session:*:user:*:*",
-		"h?llo*",
-		"*test*pattern*",
-		"???:*:???",
-	}
-
-	// Test strings of various lengths
-	testStrings = []string{
-		"user:123",
-		"user:123:profile",
-		"cache:session:123:data",
-		"session:user:456:profile:active",
-		"hello_world_test_pattern",
-		"a",
-		"very_long_string_that_should_test_performance_with_longer_inputs_and_complex_patterns",
-		"abc:def:ghi",
-		"short",
-		"medium_length_string",
-	}
-)
-
 // BenchmarkMatchPatternSimple benchmarks the simple strategy
 func BenchmarkMatchPatternSimple(b *testing.B) {
 	// Reduce the number of test combinations to prevent timeouts
