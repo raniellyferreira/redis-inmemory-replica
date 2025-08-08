@@ -39,13 +39,13 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 			// Add expired keys
 			for i := 0; i < scenario.expiredKeys; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			// Add valid keys
 			for i := 0; i < scenario.totalKeys-scenario.expiredKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			b.StartTimer()
@@ -99,13 +99,13 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 			// Add expired keys
 			for i := 0; i < scenario.expiredKeys; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			// Add valid keys
 			for i := 0; i < scenario.totalKeys-scenario.expiredKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			b.StartTimer()
@@ -146,9 +146,9 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		// Mix of expired and valid keys
 		if i%3 == 0 {
-			s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
+			_ = s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
 		} else {
-			s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
+			_ = s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
 		}
 	}
 
@@ -163,7 +163,7 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 			// Mix of operations
 			switch counter % 4 {
 			case 0:
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			case 1:
 				s.Get(key)
 			case 2:
@@ -218,10 +218,10 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 			expiredCount := int(totalKeys * expiredRatio)
 
 			for i := 0; i < expiredCount; i++ {
-				s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
+				_ = s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
 			}
 			for i := expiredCount; i < totalKeys; i++ {
-				s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
+				_ = s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
 			}
 
 			b.ResetTimer()
@@ -230,7 +230,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				// Simulate mixed read/write workload
 				key := fmt.Sprintf("workload_%d", i%100)
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 				s.Get(key)
 
 				// Occasionally trigger operations that might interact with cleanup
@@ -265,7 +265,7 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 		// Create keys with very short expiry
 		shortExpiry := time.Now().Add(1 * time.Millisecond)
 		key := fmt.Sprintf("temp_key_%d", i)
-		s.Set(key, []byte("temporary_value"), &shortExpiry)
+		_ = s.Set(key, []byte("temporary_value"), &shortExpiry)
 
 		// Allow some time for cleanup
 		if i%100 == 0 {
@@ -298,10 +298,10 @@ func BenchmarkCleanupLatency(b *testing.B) {
 
 	// 70% expired keys to trigger cleanup
 	for i := 0; i < 7000; i++ {
-		s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
+		_ = s.Set(fmt.Sprintf("expired_%d", i), []byte("value"), &pastTime)
 	}
 	for i := 0; i < 3000; i++ {
-		s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
+		_ = s.Set(fmt.Sprintf("valid_%d", i), []byte("value"), &futureTime)
 	}
 
 	b.ResetTimer()
@@ -312,7 +312,7 @@ func BenchmarkCleanupLatency(b *testing.B) {
 
 		// Perform a typical operation
 		key := fmt.Sprintf("latency_test_%d", i%1000)
-		s.Set(key, []byte("test_value"), nil)
+		_ = s.Set(key, []byte("test_value"), nil)
 		value, _ := s.Get(key)
 		_ = value
 

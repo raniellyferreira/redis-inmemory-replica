@@ -53,13 +53,13 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 					// Add expired keys
 					for i := 0; i < expiredCount; i++ {
 						key := fmt.Sprintf("expired_%d", i)
-						s.Set(key, []byte("expired_value"), &pastTime)
+						_ = s.Set(key, []byte("expired_value"), &pastTime)
 					}
 
 					// Add valid keys
 					for i := 0; i < validCount; i++ {
 						key := fmt.Sprintf("valid_%d", i)
-						s.Set(key, []byte("valid_value"), &futureTime)
+						_ = s.Set(key, []byte("valid_value"), &futureTime)
 					}
 
 					initialKeys := s.KeyCount()
@@ -166,7 +166,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 				// Mix of operations that would happen during normal usage
 				switch i % 5 {
 				case 0:
-					s.Set(key, []byte("value"), nil)
+					_ = s.Set(key, []byte("value"), nil)
 				case 1:
 					s.Get(key)
 				case 2:
@@ -192,13 +192,13 @@ func setupTestData(s *storage.MemoryStorage, totalKeys int, expiredRatio float64
 	// Add expired keys
 	for i := 0; i < expiredCount; i++ {
 		key := fmt.Sprintf("expired_%d", i)
-		s.Set(key, []byte("expired_value"), &pastTime)
+		_ = s.Set(key, []byte("expired_value"), &pastTime)
 	}
 
 	// Add valid keys
 	for i := expiredCount; i < totalKeys; i++ {
 		key := fmt.Sprintf("valid_%d", i)
-		s.Set(key, []byte("valid_value"), &futureTime)
+		_ = s.Set(key, []byte("valid_value"), &futureTime)
 	}
 }
 

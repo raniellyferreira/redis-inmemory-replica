@@ -136,13 +136,13 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 			// Add expired keys
 			for i := 0; i < expiredCount; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			// Add valid keys
 			for i := expiredCount; i < totalKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			initialKeys := s.KeyCount()
@@ -232,12 +232,12 @@ func TestCleanupAdaptiveBehavior(t *testing.T) {
 			// Add keys according to scenario
 			for i := 0; i < expiredCount; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			for i := expiredCount; i < totalKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			initialKeys := s.KeyCount()

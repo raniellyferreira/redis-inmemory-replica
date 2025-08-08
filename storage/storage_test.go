@@ -75,9 +75,9 @@ func TestMemoryStorageDel(t *testing.T) {
 	defer s.Close()
 
 	// Set some keys
-	s.Set("key1", []byte("value1"), nil)
-	s.Set("key2", []byte("value2"), nil)
-	s.Set("key3", []byte("value3"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key2", []byte("value2"), nil)
+	_ = s.Set("key3", []byte("value3"), nil)
 
 	// Delete keys
 	deleted := s.Del("key1", "key2", "nonexistent")
@@ -106,8 +106,8 @@ func TestMemoryStorageExists(t *testing.T) {
 	s := storage.NewMemory()
 	defer s.Close()
 
-	s.Set("key1", []byte("value1"), nil)
-	s.Set("key2", []byte("value2"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key2", []byte("value2"), nil)
 
 	count := s.Exists("key1", "key2", "nonexistent")
 	if count != 2 {
@@ -124,7 +124,7 @@ func TestMemoryStorageExpire(t *testing.T) {
 	s := storage.NewMemory()
 	defer s.Close()
 
-	s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
 
 	// Set expiry
 	futureTime := time.Now().Add(1 * time.Hour)
@@ -151,7 +151,7 @@ func TestMemoryStorageTTL(t *testing.T) {
 	defer s.Close()
 
 	// Key without expiry
-	s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
 	ttl := s.TTL("key1")
 	if ttl != -1*time.Second {
 		t.Errorf("TTL() = %v, want -1s (no expiry)", ttl)
@@ -165,7 +165,7 @@ func TestMemoryStorageTTL(t *testing.T) {
 
 	// Key with expiry
 	futureTime := time.Now().Add(1 * time.Hour)
-	s.Set("key2", []byte("value2"), &futureTime)
+	_ = s.Set("key2", []byte("value2"), &futureTime)
 	ttl = s.TTL("key2")
 	if ttl <= 0 || ttl > time.Hour {
 		t.Errorf("TTL() = %v, want positive duration <= 1 hour", ttl)
@@ -183,9 +183,9 @@ func TestMemoryStorageKeys(t *testing.T) {
 	}
 
 	// Add some keys
-	s.Set("key1", []byte("value1"), nil)
-	s.Set("key2", []byte("value2"), nil)
-	s.Set("key3", []byte("value3"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key2", []byte("value2"), nil)
+	_ = s.Set("key3", []byte("value3"), nil)
 
 	keys = s.Keys()
 	if len(keys) != 3 {
@@ -204,8 +204,8 @@ func TestMemoryStorageFlushAll(t *testing.T) {
 	defer s.Close()
 
 	// Add some keys
-	s.Set("key1", []byte("value1"), nil)
-	s.Set("key2", []byte("value2"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key2", []byte("value2"), nil)
 
 	// Flush all
 	err := s.FlushAll()
@@ -236,7 +236,7 @@ func TestMemoryStorageDatabase(t *testing.T) {
 	}
 
 	// Add key to database 0
-	s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
 
 	// Switch to database 1
 	err := s.SelectDB(1)
@@ -256,7 +256,7 @@ func TestMemoryStorageDatabase(t *testing.T) {
 	}
 
 	// Add key to database 1
-	s.Set("key2", []byte("value2"), nil)
+	_ = s.Set("key2", []byte("value2"), nil)
 
 	// Switch back to database 0
 	err = s.SelectDB(0)
@@ -281,9 +281,9 @@ func TestMemoryStorageScan(t *testing.T) {
 	defer s.Close()
 
 	// Add some keys
-	s.Set("user:1", []byte("alice"), nil)
-	s.Set("user:2", []byte("bob"), nil)
-	s.Set("config:app", []byte("settings"), nil)
+	_ = s.Set("user:1", []byte("alice"), nil)
+	_ = s.Set("user:2", []byte("bob"), nil)
+	_ = s.Set("config:app", []byte("settings"), nil)
 
 	// Scan all keys
 	_, keys := s.Scan(0, "*", 10)
@@ -302,7 +302,7 @@ func TestMemoryStorageInfo(t *testing.T) {
 	s := storage.NewMemory()
 	defer s.Close()
 
-	s.Set("key1", []byte("value1"), nil)
+	_ = s.Set("key1", []byte("value1"), nil)
 
 	info := s.Info()
 	if info == nil {
@@ -335,7 +335,7 @@ func BenchmarkMemoryStorageGet(b *testing.B) {
 	s := storage.NewMemory()
 	defer s.Close()
 
-	s.Set("key", []byte("value"), nil)
+	_ = s.Set("key", []byte("value"), nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -351,7 +351,7 @@ func BenchmarkMemoryStorageSet(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.Set("key", value, nil)
+		_ = s.Set("key", value, nil)
 	}
 }
 
