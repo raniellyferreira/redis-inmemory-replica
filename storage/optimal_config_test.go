@@ -70,6 +70,11 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 
 					// Wait for cleanup cycles - reduced timeout for CI stability
 					maxWait := 500 * time.Millisecond
+					sleepInterval := 25 * time.Millisecond
+					if testing.Short() {
+						maxWait = 200 * time.Millisecond
+						sleepInterval = 10 * time.Millisecond
+					}
 					var finalKeys, finalMemory int64
 
 					for elapsed := time.Duration(0); elapsed < maxWait; elapsed = time.Since(start) {
@@ -80,7 +85,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 						if float64(finalKeys)/float64(initialKeys) < 0.8 {
 							break
 						}
-						time.Sleep(25 * time.Millisecond)
+						time.Sleep(sleepInterval)
 					}
 
 					cleanupTime := time.Since(start)
@@ -222,6 +227,11 @@ func TestRecommendedConfiguration(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
+			// Skip slow tests in short mode (CI environments)
+			if testing.Short() && scenario.keys > 100 {
+				t.Skip("Skipping slow test in short mode")
+			}
+			
 			// Clear previous data
 			s.FlushAll()
 
@@ -234,8 +244,12 @@ func TestRecommendedConfiguration(t *testing.T) {
 			t.Logf("Scenario: %s", scenario.name)
 			t.Logf("Initial: %d keys, %d bytes", initialKeys, initialMemory)
 
-			// Wait for cleanup
-			time.Sleep(2 * time.Second)
+			// Wait for cleanup (reduced time for CI)
+			waitTime := 2 * time.Second
+			if testing.Short() {
+				waitTime = 500 * time.Millisecond
+			}
+			time.Sleep(waitTime)
 
 			finalKeys := s.KeyCount()
 			finalMemory := s.MemoryUsage()

@@ -909,15 +909,15 @@ func (r *rdbStreamBuffer) Read(p []byte) (n int, err error) {
 type defaultLogger struct{}
 
 func (l *defaultLogger) Debug(msg string, fields ...interface{}) {
-	// fmt.Printf("DEBUG: %s %v\n", msg, fields)
+	// Debug logging disabled by default for security
 }
 
 func (l *defaultLogger) Info(msg string, fields ...interface{}) {
-	fmt.Printf("INFO: %s %v\n", msg, fields)
+	// Info logging disabled by default for security - use SetLogger() for custom logging
 }
 
 func (l *defaultLogger) Error(msg string, fields ...interface{}) {
-	fmt.Printf("ERROR: %s %v\n", msg, fields)
+	// Error logging disabled by default for security - use SetLogger() for custom logging
 }
 
 // setConnectionTimeouts sets enhanced connection timeouts with improved error handling
