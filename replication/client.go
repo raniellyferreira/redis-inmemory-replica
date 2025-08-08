@@ -240,6 +240,9 @@ func (c *Client) Stop() error {
 	c.cancel()
 	close(c.stopChan)
 
+	// Force close connection to interrupt any blocking reads
+	c.disconnect()
+
 	select {
 	case <-c.doneChan:
 		return nil

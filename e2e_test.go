@@ -49,7 +49,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { 
+	defer func() {
 		if closeErr := replica.Close(); closeErr != nil {
 			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
 		}
@@ -207,7 +207,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	allKeys := replicaStorage.Keys()
 	t.Logf("Total keys in replica: %d", len(allKeys))
 	t.Logf("Keys: %v", allKeys)
-	
+
 	// Test completed successfully
 	t.Log("✅ All end-to-end tests passed successfully!")
 }
@@ -386,8 +386,6 @@ func isRedisAvailable(addr string) bool {
 	return strings.Contains(string(buf[:n]), "PONG")
 }
 
-
-
 func clearRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
@@ -428,8 +426,6 @@ func clearRedisWithAuth(addr, password string) error {
 
 	return nil
 }
-
-
 
 func setRedisKeyWithAuth(addr, password, key, value string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -498,8 +494,6 @@ func deleteRedisKey(addr, key string) error {
 
 	return nil
 }
-
-
 
 func forcePersistRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
