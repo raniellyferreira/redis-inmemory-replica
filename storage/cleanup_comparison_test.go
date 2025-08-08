@@ -61,8 +61,8 @@ func TestCleanupPerformanceComparison(t *testing.T) {
 
 			t.Logf("Initial state: %d keys, %d bytes memory", initialKeyCount, initialMemory)
 
-			// Wait for cleanup to occur
-			time.Sleep(1200 * time.Millisecond)
+			// Wait for cleanup to occur - reduced for CI stability
+			time.Sleep(200 * time.Millisecond)
 
 			finalKeyCount := s.KeyCount()
 			finalMemory := s.MemoryUsage()
@@ -242,8 +242,8 @@ func TestCleanupAdaptiveBehavior(t *testing.T) {
 
 			initialKeys := s.KeyCount()
 
-			// Wait for adaptive cleanup
-			time.Sleep(1500 * time.Millisecond)
+			// Wait for adaptive cleanup - reduced for CI stability
+			time.Sleep(300 * time.Millisecond)
 
 			finalKeys := s.KeyCount()
 			keysRemoved := initialKeys - finalKeys

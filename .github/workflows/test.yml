@@ -16,7 +16,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.21.5
+        go-version: 1.24.5
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -53,12 +53,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.21.5
+        go-version: 1.24.5
 
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v4
+      uses: golangci/golangci-lint-action@v6
       with:
-        version: v1.54.2
+        version: latest
 
   benchmark:
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.21.5
+        go-version: 1.24.5
 
     - name: Run benchmarks
       run: go test -bench=. -benchmem ./...
