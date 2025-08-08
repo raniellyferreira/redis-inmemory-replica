@@ -550,6 +550,11 @@ func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
+			// Skip heavy load scenario in short mode to avoid CI timeout issues
+			if testing.Short() && scenario.name == "Heavy load" {
+				t.Skip("Skipping heavy load test in short mode")
+			}
+			
 			s := storage.NewMemory()
 			defer s.Close()
 
