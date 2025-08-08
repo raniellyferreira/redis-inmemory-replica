@@ -608,8 +608,27 @@ func (c *Client) streamCommands() error {
 			// Read next command with enhanced error handling
 			value, err := c.reader.ReadNext()
 			if err != nil {
+				// Check if we're stopping - if so, don't log connection errors as they're expected
+				select {
+				case <-c.stopChan:
+					return nil // Clean shutdown, connection closed during stop
+				default:
+				}
+
 				if err == io.EOF {
 					return fmt.Errorf("connection closed")
+				}
+
+				// Check for "use of closed network connection" during shutdown
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					// Double-check if we're stopping to handle race condition
+					select {
+					case <-c.stopChan:
+						return nil // Clean shutdown
+					default:
+						// Not stopping, this is an unexpected connection closure
+						return fmt.Errorf("connection unexpectedly closed: %w", err)
+					}
 				}
 
 				// Handle protocol errors with categorization
