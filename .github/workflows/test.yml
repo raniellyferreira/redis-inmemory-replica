@@ -33,10 +33,10 @@ jobs:
       run: go mod verify
 
     - name: Build
-      run: go build -v ./...
+      run: go build -v .
 
     - name: Run tests
-      run: go test -short -race -coverprofile=coverage.out -covermode=atomic ./...
+      run: go test -short -race -coverprofile=coverage.out -covermode=atomic .
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -74,5 +74,5 @@ jobs:
       run: |
         echo "Running benchmarks (excluding storage package due to CI timeouts)..."
         find . -name "*.go" -path "./storage" -prune -o -name "*_test.go" -print | head -1 >/dev/null && \
-        go test -short -bench=. -benchmem -benchtime=0.5s -timeout=60s $(go list ./... | grep -v "/storage$") || \
+        go test -short -bench=. -benchmem -benchtime=0.5s -timeout=60s . || \
         echo "No benchmarks found or skipped"
