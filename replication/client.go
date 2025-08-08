@@ -537,13 +537,19 @@ func (c *Client) performFullSync() error {
 			return nil
 		}
 
-		c.logger.Debug("Received RDB chunk", "size", len(chunk))
+		chunkSize := len(chunk)
+		if chunkSize == 0 {
+			c.logger.Debug("Received empty RDB chunk")
+			return nil
+		}
+
+		c.logger.Debug("Received RDB chunk", "size", chunkSize)
 
 		// Copy chunk to avoid buffer reuse issues
-		chunkCopy := make([]byte, len(chunk))
+		chunkCopy := make([]byte, chunkSize)
 		copy(chunkCopy, chunk)
 		rdbBuffer.chunks = append(rdbBuffer.chunks, chunkCopy)
-		rdbBuffer.totalSize += len(chunk)
+		rdbBuffer.totalSize += chunkSize
 
 		return nil
 	})
@@ -554,7 +560,9 @@ func (c *Client) performFullSync() error {
 	c.logger.Debug("RDB data reading completed", "totalSize", rdbBuffer.totalSize, "chunks", len(rdbBuffer.chunks))
 
 	// Parse RDB from collected buffer
-	if err := ParseRDB(rdbBuffer, handler); err != nil {
+	parser := NewRDBParser(rdbBuffer, handler)
+	parser.SetLogger(c.logger)
+	if err := parser.Parse(); err != nil {
 		// For compatibility with different Redis versions, log the error but don't fail completely
 		// This allows the replication to continue even if RDB parsing has issues
 		c.logger.Error("RDB parsing failed (non-fatal for empty databases)", "error", err)
