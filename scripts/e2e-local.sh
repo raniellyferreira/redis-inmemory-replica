@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REDIS_VERSIONS=("7.0.15" "7.2.4" "7.4.1")
 DEFAULT_REDIS_PORT=6379
-TEST_DATA_DIR="$PROJECT_ROOT/test-data"
 
 # Colors for output
 RED='\033[0;31m'
@@ -103,10 +102,6 @@ setup_test_env() {
     # Clean up any existing Redis containers from previous runs
     cleanup_redis_containers
     
-    # Create test data directory with proper permissions for Redis container
-    mkdir -p "$TEST_DATA_DIR"
-    chmod 777 "$TEST_DATA_DIR"  # Allow Redis container to write
-    
     # Download Go dependencies
     cd "$PROJECT_ROOT"
     go mod download
@@ -153,6 +148,11 @@ start_redis() {
     
     log_info "Starting Redis $version on port $port..."
     
+    # Create temporary directory for this Redis version
+    local temp_dir=$(mktemp -d -t "redis-$version-XXXXXX")
+    echo "$temp_dir" > "/tmp/redis-$version-tempdir"  # Store temp dir path for cleanup
+    log_info "Using temporary directory: $temp_dir"
+    
     # Ensure any previous containers are fully stopped and removed
     stop_redis "$version"
     
@@ -174,12 +174,12 @@ start_redis() {
         image_tag="redis:$version-alpine"
     fi
     
-    # Start Redis container
+    # Start Redis container with temporary directory
     log_info "Starting container $container_name with image $image_tag"
     docker run -d \
         --name "$container_name" \
         -p "$port:6379" \
-        -v "$TEST_DATA_DIR:/data" \
+        -v "$temp_dir:/data" \
         --tmpfs /tmp:rw,noexec,nosuid,size=100m \
         "$image_tag" \
         redis-server \
@@ -250,6 +250,21 @@ stop_redis() {
     
     # Remove the container
     docker rm "$container_name" 2>/dev/null || true
+    
+    # Clean up temporary directory for this version
+    local temp_dir_file="/tmp/redis-$version-tempdir"
+    if [ -f "$temp_dir_file" ]; then
+        local temp_dir=$(cat "$temp_dir_file")
+        if [ -d "$temp_dir" ]; then
+            log_info "Cleaning up temporary directory: $temp_dir"
+            rm -rf "$temp_dir" 2>/dev/null || {
+                # If we can't remove it (permission issues), try with sudo
+                log_warning "Permission issue removing $temp_dir, trying with elevated privileges"
+                sudo rm -rf "$temp_dir" 2>/dev/null || log_warning "Could not remove $temp_dir"
+            }
+        fi
+        rm -f "$temp_dir_file"
+    fi
     
     # Additional cleanup: stop any containers using port 6379
     local port_containers=$(docker ps --filter "publish=6379" --format "{{.Names}}" 2>/dev/null || true)
@@ -322,10 +337,7 @@ run_tests() {
     export REDIS_ADDR="localhost:$port"
     export REDIS_VERSION="$version"
     
-    # Ensure test-data directory exists with proper permissions
-    mkdir -p test-data && chmod 777 test-data
-    
-    # Run E2E tests
+    # Run E2E tests (use specific package, not ./... to avoid permission issues)
     log_info "Running E2E tests..."
     if go test -v -timeout 60s -run TestEndToEndWithRealRedis .; then
         log_success "E2E tests passed for Redis $version"
@@ -419,12 +431,12 @@ run_auth_tests() {
 
 # Generate test report
 generate_report() {
-    local results_file="$TEST_DATA_DIR/test-results.json"
-    local report_file="$TEST_DATA_DIR/redis-compatibility-report.md"
+    local temp_results_file="/tmp/test-results.json"
+    local temp_report_file="/tmp/redis-compatibility-report.md"
     
     log_info "Generating compatibility report..."
     
-    cat > "$report_file" << EOF
+    cat > "$temp_report_file" << EOF
 # Redis Compatibility Test Report
 
 Generated: $(date -u)
@@ -432,8 +444,8 @@ Test Environment: Local ($(uname -s) $(uname -m))
 
 ## Test Results Summary
 
-$(if [ -f "$results_file" ]; then
-    cat "$results_file"
+$(if [ -f "$temp_results_file" ]; then
+    cat "$temp_results_file"
 else
     echo "Test results not available"
 fi)
@@ -473,7 +485,30 @@ To run these tests locally:
 
 EOF
     
-    log_success "Report generated: $report_file"
+    log_success "Report generated: $temp_report_file"
+}
+
+# Clean up all temporary directories
+cleanup_temp_dirs() {
+    log_info "Cleaning up all temporary directories..."
+    
+    # Clean up any remaining temporary directories
+    for version in "${REDIS_VERSIONS[@]}"; do
+        local temp_dir_file="/tmp/redis-$version-tempdir"
+        if [ -f "$temp_dir_file" ]; then
+            local temp_dir=$(cat "$temp_dir_file")
+            if [ -d "$temp_dir" ]; then
+                log_info "Removing temporary directory: $temp_dir"
+                rm -rf "$temp_dir" 2>/dev/null || {
+                    log_warning "Permission issue removing $temp_dir, trying with elevated privileges"
+                    sudo rm -rf "$temp_dir" 2>/dev/null || log_warning "Could not remove $temp_dir"
+                }
+            fi
+            rm -f "$temp_dir_file"
+        fi
+    done
+    
+    log_success "Temporary directory cleanup complete"
 }
 
 # Run tests with nektos/act
@@ -603,23 +638,23 @@ main() {
     done
     
     # Save results and generate report
-    mkdir -p "$TEST_DATA_DIR"
-    printf '%s\n' "${results[@]}" > "$TEST_DATA_DIR/test-results.json" 2>/dev/null || {
-        # If we can't write to test-data, write to /tmp
-        printf '%s\n' "${results[@]}" > "/tmp/test-results.json"
-        log_warning "Could not write to $TEST_DATA_DIR, results saved to /tmp/test-results.json"
-    }
+    local temp_results_file="/tmp/test-results.json"
+    printf '%s\n' "${results[@]}" > "$temp_results_file"
     generate_report
     
     # Return exit code based on results
     for result in "${results[@]}"; do
         if [[ "$result" == *"FAIL"* ]]; then
             log_error "Some tests failed. Check the report for details."
+            cleanup_temp_dirs
             exit 1
         fi
     done
     
     log_success "All tests passed!"
+    
+    # Final cleanup
+    cleanup_temp_dirs
 }
 
 # Run main function
