@@ -164,17 +164,17 @@ jobs:
     - name: Build with security flags
       run: |
         echo "Building with security-focused compiler flags..."
-        go build -buildmode=pie -ldflags="-s -w" ./...
+        go build -buildmode=pie -ldflags="-s -w" .
         
     - name: Run tests with race detection
-      run: go test -short -race -coverprofile=coverage.out ./...
+      run: go test -short -race -coverprofile=coverage.out .
       
     - name: Run fuzzing tests (if available)
       run: |
         # Look for fuzz tests and run them briefly
         if find . -name "*_test.go" -exec grep -l "func Fuzz" {} \; | head -1; then
           echo "Running fuzz tests..."
-          go test -fuzz=. -fuzztime=30s ./... || echo "Fuzz tests completed"
+          go test -fuzz=. -fuzztime=30s . || echo "Fuzz tests completed"
         else
           echo "No fuzz tests found"
         fi

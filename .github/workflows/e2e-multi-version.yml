@@ -339,25 +339,44 @@ jobs:
         fi
         
         # Wait for Redis to be ready
+        REDIS_READY=false
         for i in {1..30}; do
           if $AUTH_CMD ping 2>/dev/null | grep -q PONG; then
             echo "Redis with ${{ matrix.auth_type }} is ready!"
+            REDIS_READY=true
             break
           fi
           echo "Attempt $i/30: waiting for Redis..."
           sleep 2
         done
+        
+        # Verify Redis is actually ready
+        if [ "$REDIS_READY" != "true" ]; then
+          echo "Redis failed to start with ${{ matrix.auth_type }} authentication"
+          docker logs redis-auth
+          exit 1
+        fi
 
     - name: Run authenticated tests
       run: |
+        # Verify Redis is still running and accessible
         if [ "${{ matrix.auth_type }}" = "password" ]; then
+          AUTH_CMD="redis-cli -a testpassword123 --no-auth-warning"
           export REDIS_PASSWORD="testpassword123"
         else
+          AUTH_CMD="redis-cli"
           export REDIS_USERNAME="testuser"
           export REDIS_PASSWORD="testpassword123"
         fi
         
-        go test -v -run TestEndToEndWithRealRedis .
+        # Final verification before running tests
+        if ! $AUTH_CMD ping 2>/dev/null | grep -q PONG; then
+          echo "Redis is not accessible with authentication - skipping test"
+          exit 1
+        fi
+        
+        echo "Running E2E tests with ${{ matrix.auth_type }} authentication"
+        go test -v -timeout 300s -run TestEndToEndWithRealRedis .
       env:
         REDIS_ADDR: localhost:6379
 
