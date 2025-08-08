@@ -49,7 +49,11 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { _ = replica.Close() }()
+	defer func() { 
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
 
 	// Track sync completion
 	syncCompleted := make(chan struct{})
@@ -203,6 +207,9 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	allKeys := replicaStorage.Keys()
 	t.Logf("Total keys in replica: %d", len(allKeys))
 	t.Logf("Keys: %v", allKeys)
+	
+	// Test completed successfully
+	t.Log("✅ All end-to-end tests passed successfully!")
 }
 
 // TestRDBParsingRobustness tests RDB parsing with various scenarios
@@ -265,7 +272,11 @@ func TestRDBParsingRobustness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { _ = replica.Close() }()
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
 
 	// Start and wait for sync
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -375,9 +386,7 @@ func isRedisAvailable(addr string) bool {
 	return strings.Contains(string(buf[:n]), "PONG")
 }
 
-func clearRedis(addr string) error {
-	return clearRedisWithAuth(addr, "")
-}
+
 
 func clearRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -420,9 +429,7 @@ func clearRedisWithAuth(addr, password string) error {
 	return nil
 }
 
-func setRedisKey(addr, key, value string) error {
-	return setRedisKeyWithAuth(addr, "", key, value)
-}
+
 
 func setRedisKeyWithAuth(addr, password, key, value string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -492,9 +499,7 @@ func deleteRedisKey(addr, key string) error {
 	return nil
 }
 
-func forcePersistRedis(addr string) error {
-	return forcePersistRedisWithAuth(addr, "")
-}
+
 
 func forcePersistRedisWithAuth(addr, password string) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -634,7 +639,11 @@ func TestFullSyncAndIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { _ = replica.Close() }()
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
 
 	// Track sync completion
 	syncCompleted := make(chan struct{})
@@ -806,7 +815,11 @@ func TestRedis7xFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { _ = replica.Close() }()
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
 
 	// Start and wait for sync
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -905,7 +918,11 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create replica: %v", err)
 	}
-	defer func() { _ = replica.Close() }()
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			b.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
 
 	// Start replica
 	ctx := context.Background()
