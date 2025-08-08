@@ -564,10 +564,40 @@ Redis Master → RESP Protocol → RDB Parser → Storage Layer → Application
 
 ## Compatibility
 
-- **Redis Versions**: 5.0+ replication protocol
+- **Redis Versions**: 5.0+ replication protocol, **Enhanced Redis 7.x support**
 - **Go Versions**: 1.24.5+
 - **Redis Clients**: Compatible with `github.com/redis/go-redis` and others
 - **Platforms**: Linux, macOS, Windows
+
+### Redis 7.x Compatibility
+
+The library has been enhanced with comprehensive Redis 7.x support:
+
+- ✅ **Full RDB parsing compatibility** for Redis 7.0, 7.2, and 7.4
+- ✅ **Enhanced special string encoding support** (fixes encoding 33 errors)
+- ✅ **Multi-version testing** with automated CI workflows
+- ✅ **Graceful handling** of LZF compression and future encodings
+- ✅ **Local testing support** with [act](https://github.com/nektos/act)
+
+For detailed Redis 7.x compatibility information, see [docs/redis-7x-compatibility.md](docs/redis-7x-compatibility.md).
+
+### Local Testing
+
+Test Redis 7.x compatibility locally:
+
+```bash
+# Install act (GitHub Actions runner)
+brew install act  # macOS
+# or follow: https://github.com/nektos/act
+
+# Run Redis 7.x compatibility tests
+act -W .github/workflows/redis-compatibility.yml
+
+# Test specific Redis version
+./scripts/test-redis-compatibility.sh 7.2.4
+```
+
+See [docs/local-testing-with-act.md](docs/local-testing-with-act.md) for complete testing guide.
 
 ## Development
 
@@ -703,6 +733,53 @@ func (m *CustomMetrics) RecordCommandProcessed(cmd string, duration time.Duratio
    - Set appropriate memory limits with `WithMaxMemory`
    - Monitor memory usage with `GetInfo()`
 
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Refused**
+   - Ensure Redis master is running and accessible
+   - Check firewall settings and network connectivity
+
+2. **Authentication Failed**
+   - Verify Redis AUTH password
+   - Check Redis configuration for authentication requirements
+
+3. **Sync Timeout**
+   - Increase sync timeout for large datasets
+   - Check network bandwidth and Redis performance
+
+4. **Memory Issues**
+   - Set appropriate memory limits with `WithMaxMemory`
+   - Monitor memory usage with `GetInfo()`
+
+5. **RDB Parsing Errors (Redis 7.x)**
+   - **Fixed**: "invalid special string encoding: 33" errors
+   - The library now gracefully handles Redis 7.x RDB formats
+   - Use Redis 7.x compatible versions for best results
+
+### Redis 7.x Specific Issues
+
+#### "unsupported special string encoding" errors
+
+**Status**: ✅ **FIXED** in this version
+
+The library now supports:
+- All standard Redis 7.x string encodings (0-3)
+- LZF compression detection and handling
+- Graceful fallback for future encodings (4-63)
+
+#### Large RDB files in Redis 7.x
+
+**Solution**: Increase timeouts for larger databases:
+
+```go
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("redis7.example.com:6379"),
+    redisreplica.WithSyncTimeout(60*time.Second), // Increased for Redis 7.x
+)
+```
+
 ### Debug Logging
 
 Enable debug logging for troubleshooting:
@@ -713,6 +790,8 @@ replica, err := redisreplica.New(
     redisreplica.WithLogger(debugLogger),  // Custom logger with debug enabled
 )
 ```
+
+For comprehensive troubleshooting, see [docs/redis-7x-compatibility.md#troubleshooting](docs/redis-7x-compatibility.md#troubleshooting).
 
 ## License
 
