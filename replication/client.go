@@ -537,19 +537,13 @@ func (c *Client) performFullSync() error {
 			return nil
 		}
 
-		chunkSize := len(chunk)
-		if chunkSize == 0 {
-			c.logger.Debug("Received empty RDB chunk")
-			return nil
-		}
-
-		c.logger.Debug("Received RDB chunk", "size", chunkSize)
+		c.logger.Debug("Received RDB chunk", "size", len(chunk))
 
 		// Copy chunk to avoid buffer reuse issues
-		chunkCopy := make([]byte, chunkSize)
+		chunkCopy := make([]byte, len(chunk))
 		copy(chunkCopy, chunk)
 		rdbBuffer.chunks = append(rdbBuffer.chunks, chunkCopy)
-		rdbBuffer.totalSize += chunkSize
+		rdbBuffer.totalSize += len(chunk)
 
 		return nil
 	})
