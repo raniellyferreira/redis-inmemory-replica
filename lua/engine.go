@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	lua "github.com/yuin/gopher-lua"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
+	lua "github.com/yuin/gopher-lua"
 )
 
 // Engine provides Redis-compatible Lua script execution

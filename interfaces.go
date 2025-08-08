@@ -16,10 +16,10 @@ type Field struct {
 type Logger interface {
 	// Debug logs a debug message with optional fields
 	Debug(msg string, fields ...Field)
-	
+
 	// Info logs an info message with optional fields
 	Info(msg string, fields ...Field)
-	
+
 	// Error logs an error message with optional fields
 	Error(msg string, fields ...Field)
 }
@@ -28,22 +28,22 @@ type Logger interface {
 type MetricsCollector interface {
 	// RecordSyncDuration records the time taken for synchronization
 	RecordSyncDuration(duration time.Duration)
-	
+
 	// RecordCommandProcessed records a processed command with its duration
 	RecordCommandProcessed(cmd string, duration time.Duration)
-	
+
 	// RecordNetworkBytes records network bytes transferred
 	RecordNetworkBytes(bytes int64)
-	
+
 	// RecordKeyCount records the current number of keys
 	RecordKeyCount(count int64)
-	
+
 	// RecordMemoryUsage records current memory usage
 	RecordMemoryUsage(bytes int64)
-	
+
 	// RecordReconnection records a reconnection event
 	RecordReconnection()
-	
+
 	// RecordError records an error event
 	RecordError(errorType string)
 }
@@ -51,23 +51,23 @@ type MetricsCollector interface {
 // ReplicationStats provides detailed replication statistics
 type ReplicationStats struct {
 	mu sync.RWMutex
-	
+
 	// Connection stats
-	ConnectedAt      time.Time
-	DisconnectedAt   time.Time
-	ReconnectCount   int64
-	
+	ConnectedAt    time.Time
+	DisconnectedAt time.Time
+	ReconnectCount int64
+
 	// Sync stats
-	InitialSyncStart    time.Time
-	InitialSyncEnd      time.Time
-	FullSyncCount       int64
-	PartialSyncCount    int64
-	
+	InitialSyncStart time.Time
+	InitialSyncEnd   time.Time
+	FullSyncCount    int64
+	PartialSyncCount int64
+
 	// Data stats
-	KeyCount          int64
-	MemoryUsage       int64
-	NetworkBytesRecv  int64
-	
+	KeyCount         int64
+	MemoryUsage      int64
+	NetworkBytesRecv int64
+
 	// Command stats
 	CommandsProcessed map[string]int64
 }
@@ -98,30 +98,6 @@ func (s *ReplicationStats) GetCommandCount(cmd string) int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.CommandsProcessed[cmd]
-}
-
-// incrementKeyCount increments the key count atomically
-func (s *ReplicationStats) incrementKeyCount(delta int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.KeyCount += delta
-}
-
-// updateMemoryUsage updates the memory usage atomically
-func (s *ReplicationStats) updateMemoryUsage(bytes int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.MemoryUsage = bytes
-}
-
-// incrementCommandCount increments the command count atomically
-func (s *ReplicationStats) incrementCommandCount(cmd string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.CommandsProcessed == nil {
-		s.CommandsProcessed = make(map[string]int64)
-	}
-	s.CommandsProcessed[cmd]++
 }
 
 // defaultLogger is a simple logger implementation using the standard log package
@@ -157,14 +133,3 @@ func formatValue(v interface{}) string {
 		return ""
 	}
 }
-
-// noOpMetrics is a no-operation metrics collector
-type noOpMetrics struct{}
-
-func (n *noOpMetrics) RecordSyncDuration(duration time.Duration)           {}
-func (n *noOpMetrics) RecordCommandProcessed(cmd string, duration time.Duration) {}
-func (n *noOpMetrics) RecordNetworkBytes(bytes int64)                      {}
-func (n *noOpMetrics) RecordKeyCount(count int64)                          {}
-func (n *noOpMetrics) RecordMemoryUsage(bytes int64)                       {}
-func (n *noOpMetrics) RecordReconnection()                                 {}
-func (n *noOpMetrics) RecordError(errorType string)                        {}

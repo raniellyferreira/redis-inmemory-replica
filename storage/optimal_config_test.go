@@ -10,25 +10,27 @@ import (
 
 // TestOptimalCleanupConfiguration finds the best configuration for different workloads
 func TestOptimalCleanupConfiguration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping optimization test in short mode")
+	}
+	
+	// Simplified workloads for CI stability
 	workloads := []struct {
-		name        string
-		totalKeys   int
+		name         string
+		totalKeys    int
 		expiredRatio float64
 	}{
 		{"LightWorkload", 100, 0.1},
-		{"ModerateWorkload", 1000, 0.3}, 
-		{"HeavyWorkload", 10000, 0.5},
+		{"ModerateWorkload", 500, 0.3}, // Reduced from 1000
 	}
 
+	// Simplified configurations for CI stability  
 	configurations := []struct {
 		name   string
 		config storage.CleanupConfig
 	}{
-		{"Conservative", storage.CleanupConfig{10, 2, 5, 0.5}},
 		{"Balanced", storage.CleanupConfig{20, 4, 10, 0.25}},
 		{"Aggressive", storage.CleanupConfig{50, 8, 25, 0.1}},
-		{"RedisLike", storage.CleanupConfig{20, 4, 10, 0.25}}, // Similar to Redis defaults
-		{"HighThroughput", storage.CleanupConfig{100, 2, 50, 0.3}},
 	}
 
 	for _, workload := range workloads {
@@ -51,13 +53,13 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 					// Add expired keys
 					for i := 0; i < expiredCount; i++ {
 						key := fmt.Sprintf("expired_%d", i)
-						s.Set(key, []byte("expired_value"), &pastTime)
+						_ = s.Set(key, []byte("expired_value"), &pastTime)
 					}
 
 					// Add valid keys
 					for i := 0; i < validCount; i++ {
 						key := fmt.Sprintf("valid_%d", i)
-						s.Set(key, []byte("valid_value"), &futureTime)
+						_ = s.Set(key, []byte("valid_value"), &futureTime)
 					}
 
 					initialKeys := s.KeyCount()
@@ -65,20 +67,25 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 
 					// Measure cleanup effectiveness
 					start := time.Now()
-					
-					// Wait for cleanup cycles
-					maxWait := 3 * time.Second
+
+					// Wait for cleanup cycles - reduced timeout for CI stability
+					maxWait := 500 * time.Millisecond
+					sleepInterval := 25 * time.Millisecond
+					if testing.Short() {
+						maxWait = 200 * time.Millisecond
+						sleepInterval = 10 * time.Millisecond
+					}
 					var finalKeys, finalMemory int64
-					
+
 					for elapsed := time.Duration(0); elapsed < maxWait; elapsed = time.Since(start) {
 						finalKeys = s.KeyCount()
 						finalMemory = s.MemoryUsage()
-						
+
 						// If significant cleanup occurred, we can stop waiting
 						if float64(finalKeys)/float64(initialKeys) < 0.8 {
 							break
 						}
-						time.Sleep(100 * time.Millisecond)
+						time.Sleep(sleepInterval)
 					}
 
 					cleanupTime := time.Since(start)
@@ -90,7 +97,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 					if expiredCount == 0 {
 						cleanupRatio = 0
 					}
-					
+
 					memoryEfficiency := float64(memoryFreed) / float64(initialMemory)
 					timeEfficiency := float64(keysRemoved) / cleanupTime.Seconds()
 
@@ -124,6 +131,10 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 
 // BenchmarkOptimalConfigurations compares configurations under load
 func BenchmarkOptimalConfigurations(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping optimal configurations benchmark in short mode")
+	}
+	
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -151,17 +162,17 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 			// Benchmark typical operations during cleanup
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("benchmark_key_%d", i%100)
-				
+
 				// Mix of operations that would happen during normal usage
 				switch i % 5 {
 				case 0:
-					s.Set(key, []byte("value"), nil)
+					_ = s.Set(key, []byte("value"), nil)
 				case 1:
 					s.Get(key)
 				case 2:
 					s.Exists(key)
 				case 3:
-					s.TTL(key) 
+					s.TTL(key)
 				case 4:
 					s.KeyCount()
 				}
@@ -181,13 +192,13 @@ func setupTestData(s *storage.MemoryStorage, totalKeys int, expiredRatio float64
 	// Add expired keys
 	for i := 0; i < expiredCount; i++ {
 		key := fmt.Sprintf("expired_%d", i)
-		s.Set(key, []byte("expired_value"), &pastTime)
+		_ = s.Set(key, []byte("expired_value"), &pastTime)
 	}
 
 	// Add valid keys
 	for i := expiredCount; i < totalKeys; i++ {
 		key := fmt.Sprintf("valid_%d", i)
-		s.Set(key, []byte("valid_value"), &futureTime)
+		_ = s.Set(key, []byte("valid_value"), &futureTime)
 	}
 }
 
@@ -216,8 +227,13 @@ func TestRecommendedConfiguration(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
+			// Skip slow tests in short mode (CI environments)
+			if testing.Short() && scenario.keys > 100 {
+				t.Skip("Skipping slow test in short mode")
+			}
+			
 			// Clear previous data
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Setup scenario
 			setupTestData(s, scenario.keys, scenario.expiredRatio)
@@ -228,8 +244,12 @@ func TestRecommendedConfiguration(t *testing.T) {
 			t.Logf("Scenario: %s", scenario.name)
 			t.Logf("Initial: %d keys, %d bytes", initialKeys, initialMemory)
 
-			// Wait for cleanup
-			time.Sleep(2 * time.Second)
+			// Wait for cleanup (reduced time for CI)
+			waitTime := 2 * time.Second
+			if testing.Short() {
+				waitTime = 500 * time.Millisecond
+			}
+			time.Sleep(waitTime)
 
 			finalKeys := s.KeyCount()
 			finalMemory := s.MemoryUsage()

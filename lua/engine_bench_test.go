@@ -172,7 +172,7 @@ func BenchmarkLuaEngine_LoadScript(b *testing.B) {
 func BenchmarkLuaEngine_ScriptExists(b *testing.B) {
 	stor := storage.NewMemory()
 	engine := NewEngine(stor)
-	
+
 	// Pre-load some scripts
 	hashes := make([]string, 10)
 	for i := 0; i < 10; i++ {
@@ -231,7 +231,7 @@ func BenchmarkLuaEngine_MemoryUsage(b *testing.B) {
 		// Create unique script to avoid SHA collision
 		script := "return '" + string(rune('a'+i%26)) + string(rune('a'+(i/26)%26)) + "'"
 		sha := engine.LoadScript(script)
-		
+
 		// Execute the script occasionally
 		if i%100 == 0 {
 			_, err := engine.EvalSHA(sha, []string{}, []string{})

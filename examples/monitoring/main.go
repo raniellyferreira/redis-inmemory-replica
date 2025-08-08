@@ -39,11 +39,11 @@ func (l *CustomLogger) Error(msg string, fields ...redisreplica.Field) {
 
 // MetricsCollector implements redisreplica.MetricsCollector interface
 type MetricsCollector struct {
-	syncDurations      []time.Duration
-	commandCounts      map[string]int64
-	networkBytes       int64
-	reconnectionCount  int64
-	errorCounts        map[string]int64
+	syncDurations     []time.Duration
+	commandCounts     map[string]int64
+	networkBytes      int64
+	reconnectionCount int64
+	errorCounts       map[string]int64
 }
 
 func NewMetricsCollector() *MetricsCollector {
@@ -123,7 +123,7 @@ func main() {
 	defer cancel()
 
 	logger.Info("Starting monitored replica...")
-	
+
 	if err := replica.Start(ctx); err != nil {
 		log.Fatal("Failed to start replica:", err)
 	}
@@ -136,7 +136,7 @@ func main() {
 
 	// Monitor continuously
 	logger.Info("Starting continuous monitoring...")
-	
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -145,7 +145,7 @@ func main() {
 		case <-ticker.C:
 			printDetailedStatus(replica, logger)
 			metrics.PrintReport()
-			
+
 		case <-ctx.Done():
 			logger.Info("Monitoring stopped")
 			return
@@ -156,7 +156,7 @@ func main() {
 func printDetailedStatus(replica *redisreplica.Replica, logger *CustomLogger) {
 	status := replica.SyncStatus()
 	info := replica.GetInfo()
-	
+
 	logger.Info("Status Update",
 		redisreplica.Field{Key: "connected", Value: status.Connected},
 		redisreplica.Field{Key: "sync_completed", Value: status.InitialSyncCompleted},

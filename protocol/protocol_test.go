@@ -94,7 +94,7 @@ func TestRESPReader(t *testing.T) {
 func TestRESPArray(t *testing.T) {
 	// Test array: ["SET", "key", "value"]
 	input := "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"
-	
+
 	reader := protocol.NewReader(strings.NewReader(input))
 	value, err := reader.ReadNext()
 	if err != nil {
@@ -258,39 +258,39 @@ func TestValueString(t *testing.T) {
 
 func TestSkipBulkString(t *testing.T) {
 	tests := []struct {
-		name            string
-		input           string
-		expectError     bool
+		name             string
+		input            string
+		expectError      bool
 		nextReadExpected string
 	}{
 		{
-			name:            "skip regular bulk string",
-			input:           "$5\r\nhello\r\n+OK\r\n",
-			expectError:     false,
+			name:             "skip regular bulk string",
+			input:            "$5\r\nhello\r\n+OK\r\n",
+			expectError:      false,
 			nextReadExpected: "OK",
 		},
 		{
-			name:            "skip empty bulk string",
-			input:           "$0\r\n\r\n+OK\r\n",
-			expectError:     false,
+			name:             "skip empty bulk string",
+			input:            "$0\r\n\r\n+OK\r\n",
+			expectError:      false,
 			nextReadExpected: "OK",
 		},
 		{
-			name:            "skip null bulk string",
-			input:           "$-1\r\n+OK\r\n",
-			expectError:     false,
+			name:             "skip null bulk string",
+			input:            "$-1\r\n+OK\r\n",
+			expectError:      false,
 			nextReadExpected: "OK",
 		},
 		{
-			name:            "skip large bulk string",
-			input:           "$10\r\n0123456789\r\n+OK\r\n",
-			expectError:     false,
+			name:             "skip large bulk string",
+			input:            "$10\r\n0123456789\r\n+OK\r\n",
+			expectError:      false,
 			nextReadExpected: "OK",
 		},
 		{
-			name:            "skip bulk string with binary data",
-			input:           "$6\r\n\x00\x01\x02\xff\xfe\xfd\r\n+OK\r\n",
-			expectError:     false,
+			name:             "skip bulk string with binary data",
+			input:            "$6\r\n\x00\x01\x02\xff\xfe\xfd\r\n+OK\r\n",
+			expectError:      false,
 			nextReadExpected: "OK",
 		},
 	}
@@ -298,7 +298,7 @@ func TestSkipBulkString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := protocol.NewReader(strings.NewReader(tt.input))
-			
+
 			// Skip the first value (bulk string)
 			err := reader.Skip()
 			if tt.expectError && err == nil {
@@ -306,18 +306,18 @@ func TestSkipBulkString(t *testing.T) {
 			} else if !tt.expectError && err != nil {
 				t.Errorf("Skip() unexpected error = %v", err)
 			}
-			
+
 			if !tt.expectError {
 				// Read the next value to verify skip worked correctly
 				value, err := reader.ReadNext()
 				if err != nil {
 					t.Fatalf("ReadNext() after Skip() error = %v", err)
 				}
-				
+
 				if value.Type != protocol.TypeSimpleString {
 					t.Errorf("Next value type = %v, want %v", value.Type, protocol.TypeSimpleString)
 				}
-				
+
 				if string(value.Data) != tt.nextReadExpected {
 					t.Errorf("Next value = %q, want %q", string(value.Data), tt.nextReadExpected)
 				}
@@ -328,7 +328,7 @@ func TestSkipBulkString(t *testing.T) {
 
 func BenchmarkRESPReader(b *testing.B) {
 	input := "+OK\r\n"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader := protocol.NewReader(strings.NewReader(input))
@@ -342,7 +342,7 @@ func BenchmarkRESPReader(b *testing.B) {
 func BenchmarkRESPWriter(b *testing.B) {
 	var buf bytes.Buffer
 	writer := protocol.NewWriter(&buf)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Reset()

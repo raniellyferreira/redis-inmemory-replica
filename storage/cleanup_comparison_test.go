@@ -61,14 +61,14 @@ func TestCleanupPerformanceComparison(t *testing.T) {
 
 			t.Logf("Initial state: %d keys, %d bytes memory", initialKeyCount, initialMemory)
 
-			// Wait for cleanup to occur
-			time.Sleep(1200 * time.Millisecond)
+			// Wait for cleanup to occur - reduced for CI stability
+			time.Sleep(200 * time.Millisecond)
 
 			finalKeyCount := s.KeyCount()
 			finalMemory := s.MemoryUsage()
 
 			t.Logf("After cleanup: %d keys, %d bytes memory", finalKeyCount, finalMemory)
-			t.Logf("Reduction: %d keys removed, %d bytes freed", 
+			t.Logf("Reduction: %d keys removed, %d bytes freed",
 				initialKeyCount-finalKeyCount, initialMemory-finalMemory)
 
 			// Verify that some cleanup occurred (but may not be complete due to sampling)
@@ -108,7 +108,7 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 			storage.CleanupConfig{SampleSize: 10, MaxRounds: 2, BatchSize: 5, ExpiredThreshold: 0.5},
 		},
 		{
-			"Medium_Batches", 
+			"Medium_Batches",
 			storage.CleanupConfig{SampleSize: 20, MaxRounds: 4, BatchSize: 10, ExpiredThreshold: 0.25},
 		},
 		{
@@ -131,18 +131,18 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 			expiredCount := int(totalKeys * expiredRatio)
 
 			// Clear any existing data
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Add expired keys
 			for i := 0; i < expiredCount; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			// Add valid keys
 			for i := expiredCount; i < totalKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			initialKeys := s.KeyCount()
@@ -151,7 +151,7 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 			// Measure time for cleanup to take effect
 			start := time.Now()
 			maxWait := 2 * time.Second
-			
+
 			for time.Since(start) < maxWait {
 				currentKeys := s.KeyCount()
 				if currentKeys < initialKeys {
@@ -212,7 +212,7 @@ func TestCleanupAdaptiveBehavior(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			s.FlushAll()
+			_ = s.FlushAll()
 
 			// Configure cleanup
 			s.SetCleanupConfig(storage.CleanupConfig{
@@ -232,24 +232,24 @@ func TestCleanupAdaptiveBehavior(t *testing.T) {
 			// Add keys according to scenario
 			for i := 0; i < expiredCount; i++ {
 				key := fmt.Sprintf("expired_%d", i)
-				s.Set(key, []byte("expired_value"), &pastTime)
+				_ = s.Set(key, []byte("expired_value"), &pastTime)
 			}
 
 			for i := expiredCount; i < totalKeys; i++ {
 				key := fmt.Sprintf("valid_%d", i)
-				s.Set(key, []byte("valid_value"), &futureTime)
+				_ = s.Set(key, []byte("valid_value"), &futureTime)
 			}
 
 			initialKeys := s.KeyCount()
-			
-			// Wait for adaptive cleanup
-			time.Sleep(1500 * time.Millisecond)
-			
+
+			// Wait for adaptive cleanup - reduced for CI stability
+			time.Sleep(300 * time.Millisecond)
+
 			finalKeys := s.KeyCount()
 			keysRemoved := initialKeys - finalKeys
 
 			t.Logf("Scenario: %s (%.1f%% expired)", scenario.name, scenario.expiredRatio*100)
-			t.Logf("Keys removed: %d out of %d (%.1f%%)", 
+			t.Logf("Keys removed: %d out of %d (%.1f%%)",
 				keysRemoved, initialKeys, float64(keysRemoved)/float64(initialKeys)*100)
 			t.Logf("Expectation: %s", scenario.expectRounds)
 

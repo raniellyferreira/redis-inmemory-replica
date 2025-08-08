@@ -4,21 +4,51 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
+// Global sync coordination to prevent multiple managers from starting concurrently
+var globalSyncCoordinator = &syncCoordinator{
+	activeSyncs: make(map[string]bool),
+}
+
+type syncCoordinator struct {
+	mu          sync.Mutex
+	activeSyncs map[string]bool // masterAddr -> active
+}
+
+func (sc *syncCoordinator) tryAcquire(masterAddr string) bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	
+	if sc.activeSyncs[masterAddr] {
+		return false // Already active
+	}
+	
+	sc.activeSyncs[masterAddr] = true
+	return true
+}
+
+func (sc *syncCoordinator) release(masterAddr string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	delete(sc.activeSyncs, masterAddr)
+}
+
 // SyncManager manages synchronization between master and replica
 type SyncManager struct {
 	client  *Client
 	storage storage.Storage
-	
+
 	// Sync state
 	mu              sync.RWMutex
 	initialSyncDone bool
 	syncCallbacks   []func()
-	
+	starting        int32 // atomic flag to prevent concurrent Start calls
+
 	// Configuration
 	maxRetries int
 	retryDelay time.Duration
@@ -28,23 +58,23 @@ type SyncManager struct {
 type SyncStatus struct {
 	InitialSyncCompleted bool
 	InitialSyncProgress  float64 // 0.0 to 1.0
-	Connected           bool
-	MasterHost          string
-	ReplicationOffset   int64
-	LastSyncTime        time.Time
-	BytesReceived       int64
-	CommandsProcessed   int64
+	Connected            bool
+	MasterHost           string
+	ReplicationOffset    int64
+	LastSyncTime         time.Time
+	BytesReceived        int64
+	CommandsProcessed    int64
 }
 
 // NewSyncManager creates a new synchronization manager
 func NewSyncManager(masterAddr string, stor storage.Storage) *SyncManager {
 	client := NewClient(masterAddr, stor)
-	
+
 	return &SyncManager{
-		client:      client,
-		storage:     stor,
-		maxRetries:  5,
-		retryDelay:  time.Second,
+		client:     client,
+		storage:    stor,
+		maxRetries: 5,
+		retryDelay: time.Second,
 	}
 }
 
@@ -101,6 +131,23 @@ func (sm *SyncManager) SetDatabases(databases []int) {
 
 // Start begins synchronization
 func (sm *SyncManager) Start(ctx context.Context) error {
+	// Use atomic check and set to prevent concurrent start operations
+	if !atomic.CompareAndSwapInt32(&sm.starting, 0, 1) {
+		sm.client.logger.Debug("Sync manager start already in progress, skipping duplicate Start call")
+		return nil
+	}
+	
+	defer atomic.StoreInt32(&sm.starting, 0)
+
+	// Try to acquire global sync lock for this master
+	masterAddr := sm.client.masterAddr
+	if !globalSyncCoordinator.tryAcquire(masterAddr) {
+		sm.client.logger.Debug("Another sync manager is already active for this master, skipping")
+		return nil
+	}
+	
+	defer globalSyncCoordinator.release(masterAddr)
+
 	// Register sync completion callback
 	sm.client.OnSyncComplete(func() {
 		sm.mu.Lock()
@@ -108,18 +155,20 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 		callbacks := make([]func(), len(sm.syncCallbacks))
 		copy(callbacks, sm.syncCallbacks)
 		sm.mu.Unlock()
-		
+
 		// Notify callbacks
 		for _, callback := range callbacks {
 			callback()
 		}
 	})
-	
+
 	// Start replication with retries
 	var lastErr error
 	for i := 0; i < sm.maxRetries; i++ {
 		if err := sm.client.Start(ctx); err != nil {
 			lastErr = err
+			sm.client.logger.Debug("Sync start attempt failed", "attempt", i+1, "error", err)
+			
 			if i < sm.maxRetries-1 {
 				select {
 				case <-time.After(sm.retryDelay):
@@ -129,10 +178,11 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 				}
 			}
 		} else {
+			sm.client.logger.Debug("Sync manager started successfully", "attempt", i+1)
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("failed to start sync after %d retries: %w", sm.maxRetries, lastErr)
 }
 
@@ -150,16 +200,16 @@ func (sm *SyncManager) WaitForSync(ctx context.Context) error {
 		return nil
 	}
 	sm.mu.RUnlock()
-	
+
 	// Wait for sync completion
 	syncDone := make(chan struct{})
-	
+
 	sm.mu.Lock()
 	sm.syncCallbacks = append(sm.syncCallbacks, func() {
 		close(syncDone)
 	})
 	sm.mu.Unlock()
-	
+
 	select {
 	case <-syncDone:
 		return nil
@@ -171,20 +221,20 @@ func (sm *SyncManager) WaitForSync(ctx context.Context) error {
 // SyncStatus returns the current synchronization status
 func (sm *SyncManager) SyncStatus() SyncStatus {
 	stats := sm.client.Stats()
-	
+
 	sm.mu.RLock()
 	initialSyncDone := sm.initialSyncDone
 	sm.mu.RUnlock()
-	
+
 	return SyncStatus{
 		InitialSyncCompleted: initialSyncDone,
 		InitialSyncProgress:  stats.InitialSyncProgress,
-		Connected:           stats.Connected,
-		MasterHost:          stats.MasterAddr,
-		ReplicationOffset:   stats.ReplicationOffset,
-		LastSyncTime:        stats.LastSyncTime,
-		BytesReceived:       stats.BytesReceived,
-		CommandsProcessed:   stats.CommandsProcessed,
+		Connected:            stats.Connected,
+		MasterHost:           stats.MasterAddr,
+		ReplicationOffset:    stats.ReplicationOffset,
+		LastSyncTime:         stats.LastSyncTime,
+		BytesReceived:        stats.BytesReceived,
+		CommandsProcessed:    stats.CommandsProcessed,
 	}
 }
 
@@ -192,13 +242,13 @@ func (sm *SyncManager) SyncStatus() SyncStatus {
 func (sm *SyncManager) OnSyncComplete(fn func()) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	if sm.initialSyncDone {
 		// Already synced, call immediately
 		go fn()
 		return
 	}
-	
+
 	sm.syncCallbacks = append(sm.syncCallbacks, fn)
 }
 

@@ -55,7 +55,7 @@ func (rm *ReplicaManager) StartAll(ctx context.Context) error {
 		wg.Add(1)
 		go func(name string, replica *redisreplica.Replica) {
 			defer wg.Done()
-			
+
 			log.Printf("🚀 Starting replica %s...", name)
 			if err := replica.Start(ctx); err != nil {
 				errChan <- fmt.Errorf("failed to start replica %s: %w", name, err)
@@ -115,7 +115,7 @@ func (rm *ReplicaManager) PrintStatusAll() {
 		fmt.Printf("   Synced: %v\n", status.InitialSyncCompleted)
 		fmt.Printf("   Offset: %d\n", status.ReplicationOffset)
 		fmt.Printf("   Commands: %d\n", status.CommandsProcessed)
-		
+
 		if keys, ok := info["keys"]; ok {
 			fmt.Printf("   Keys: %v\n", keys)
 		}
@@ -144,8 +144,8 @@ func main() {
 		replicaAddr string
 	}{
 		{"primary", "localhost:6379", ":6380"},
-		{"cache", "localhost:6381", ":6382"},     // If you have a second Redis instance
-		{"session", "localhost:6383", ":6384"},   // If you have a third Redis instance
+		{"cache", "localhost:6381", ":6382"},   // If you have a second Redis instance
+		{"session", "localhost:6383", ":6384"}, // If you have a third Redis instance
 	}
 
 	// Add replicas
@@ -192,7 +192,7 @@ func main() {
 		select {
 		case <-ticker.C:
 			manager.PrintStatusAll()
-			
+
 		case <-ctx.Done():
 			log.Println("Context cancelled, shutting down cluster...")
 			return

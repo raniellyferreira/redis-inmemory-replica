@@ -4,23 +4,6 @@ import (
 	"time"
 )
 
-// loggerAdapter adapts our Logger interface to replication.Logger
-type loggerAdapter struct {
-	logger Logger
-}
-
-func (la *loggerAdapter) Debug(msg string, fields ...interface{}) {
-	la.logger.Debug(msg, convertFields(fields...)...)
-}
-
-func (la *loggerAdapter) Info(msg string, fields ...interface{}) {
-	la.logger.Info(msg, convertFields(fields...)...)
-}
-
-func (la *loggerAdapter) Error(msg string, fields ...interface{}) {
-	la.logger.Error(msg, convertFields(fields...)...)
-}
-
 func convertFields(fields ...interface{}) []Field {
 	result := make([]Field, 0, len(fields)/2)
 	for i := 0; i < len(fields)-1; i += 2 {

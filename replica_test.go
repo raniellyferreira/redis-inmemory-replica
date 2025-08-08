@@ -166,13 +166,13 @@ func (l *testLogger) Error(msg string, fields ...redisreplica.Field) {}
 
 type testMetrics struct{}
 
-func (m *testMetrics) RecordSyncDuration(duration time.Duration)                  {}
+func (m *testMetrics) RecordSyncDuration(duration time.Duration)                 {}
 func (m *testMetrics) RecordCommandProcessed(cmd string, duration time.Duration) {}
-func (m *testMetrics) RecordNetworkBytes(bytes int64)                             {}
-func (m *testMetrics) RecordKeyCount(count int64)                                 {}
-func (m *testMetrics) RecordMemoryUsage(bytes int64)                              {}
-func (m *testMetrics) RecordReconnection()                                        {}
-func (m *testMetrics) RecordError(errorType string)                               {}
+func (m *testMetrics) RecordNetworkBytes(bytes int64)                            {}
+func (m *testMetrics) RecordKeyCount(count int64)                                {}
+func (m *testMetrics) RecordMemoryUsage(bytes int64)                             {}
+func (m *testMetrics) RecordReconnection()                                       {}
+func (m *testMetrics) RecordError(errorType string)                              {}
 
 // TestDatabaseFiltering tests the database filtering functionality
 func TestDatabaseFiltering(t *testing.T) {

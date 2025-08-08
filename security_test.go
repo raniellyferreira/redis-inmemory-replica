@@ -9,34 +9,34 @@ import (
 // TestSecureTLSConfiguration tests the WithSecureTLS option
 func TestSecureTLSConfiguration(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Test WithSecureTLS
 	option := WithSecureTLS("redis.example.com")
 	err := option(cfg)
 	if err != nil {
 		t.Fatalf("WithSecureTLS failed: %v", err)
 	}
-	
+
 	// Verify TLS configuration
 	if cfg.masterTLS == nil {
 		t.Fatal("TLS config should not be nil")
 	}
-	
+
 	// Check ServerName
 	if cfg.masterTLS.ServerName != "redis.example.com" {
 		t.Errorf("Expected ServerName to be 'redis.example.com', got %s", cfg.masterTLS.ServerName)
 	}
-	
+
 	// Check InsecureSkipVerify is false
 	if cfg.masterTLS.InsecureSkipVerify {
 		t.Error("InsecureSkipVerify should be false for secure TLS")
 	}
-	
+
 	// Check MinVersion is TLS 1.3 (production environment default)
 	if cfg.masterTLS.MinVersion != tls.VersionTLS13 {
 		t.Errorf("Expected MinVersion to be TLS 1.3, got %d", cfg.masterTLS.MinVersion)
 	}
-	
+
 	// Check that cipher suites are configured
 	if len(cfg.masterTLS.CipherSuites) == 0 {
 		t.Error("Cipher suites should be configured")
@@ -46,14 +46,14 @@ func TestSecureTLSConfiguration(t *testing.T) {
 // TestSecureTLSConfigurationInvalidServerName tests WithSecureTLS with invalid input
 func TestSecureTLSConfigurationInvalidServerName(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Test WithSecureTLS with empty server name
 	option := WithSecureTLS("")
 	err := option(cfg)
 	if err == nil {
 		t.Fatal("WithSecureTLS should fail with empty server name")
 	}
-	
+
 	if err != ErrInvalidConfig {
 		t.Errorf("Expected ErrInvalidConfig, got %v", err)
 	}
@@ -87,7 +87,7 @@ func TestTimeoutConfigurations(t *testing.T) {
 			expected: 15 * time.Second,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := defaultConfig()
@@ -95,7 +95,7 @@ func TestTimeoutConfigurations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Option %s failed: %v", tc.name, err)
 			}
-			
+
 			actual := tc.getValue(cfg)
 			if actual != tc.expected {
 				t.Errorf("Expected %s to be %v, got %v", tc.name, tc.expected, actual)
@@ -117,7 +117,7 @@ func TestInvalidTimeoutConfigurations(t *testing.T) {
 		{"WriteTimeout", WithWriteTimeout(0)},
 		{"WriteTimeout negative", WithWriteTimeout(-1 * time.Second)},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := defaultConfig()
@@ -125,7 +125,7 @@ func TestInvalidTimeoutConfigurations(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Option %s should fail with invalid timeout", tc.name)
 			}
-			
+
 			if err != ErrInvalidConfig {
 				t.Errorf("Expected ErrInvalidConfig, got %v", err)
 			}
@@ -136,25 +136,25 @@ func TestInvalidTimeoutConfigurations(t *testing.T) {
 // TestSecurityDefaults tests that security defaults are appropriate
 func TestSecurityDefaults(t *testing.T) {
 	cfg := defaultConfig()
-	
+
 	// Check that read-only is true by default
 	if !cfg.readOnly {
 		t.Error("Default configuration should be read-only")
 	}
-	
+
 	// Check that timeouts have reasonable defaults
 	if cfg.connectTimeout <= 0 {
 		t.Error("Connect timeout should have a positive default")
 	}
-	
+
 	if cfg.readTimeout <= 0 {
 		t.Error("Read timeout should have a positive default")
 	}
-	
+
 	if cfg.writeTimeout <= 0 {
 		t.Error("Write timeout should have a positive default")
 	}
-	
+
 	// Check that sync timeout has a reasonable default
 	if cfg.syncTimeout <= 0 {
 		t.Error("Sync timeout should have a positive default")
@@ -174,28 +174,28 @@ func TestSecureReplicaConfiguration(t *testing.T) {
 		WithReadOnly(true),
 		WithDatabases([]int{0, 1}), // Only replicate specific databases
 	)
-	
+
 	if err != nil {
 		t.Fatalf("Failed to create secure replica: %v", err)
 	}
-	
+
 	if replica == nil {
 		t.Fatal("Replica should not be nil")
 	}
-	
+
 	// Test that the replica was created with secure defaults
 	if !replica.config.readOnly {
 		t.Error("Replica should be read-only for security")
 	}
-	
+
 	if replica.config.masterTLS == nil {
 		t.Error("TLS should be configured")
 	}
-	
+
 	if replica.config.masterPassword == "" {
 		t.Error("Authentication should be configured")
 	}
-	
+
 	if len(replica.config.databases) != 2 {
 		t.Error("Database filtering should be configured")
 	}

@@ -14,14 +14,14 @@ func VersionInfo() map[string]string {
 	info := map[string]string{
 		"version": Version,
 	}
-	
+
 	if GitCommit != "" {
 		info["commit"] = GitCommit
 	}
-	
+
 	if BuildTime != "" {
 		info["buildTime"] = BuildTime
 	}
-	
+
 	return info
 }

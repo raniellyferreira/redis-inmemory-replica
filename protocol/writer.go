@@ -117,13 +117,13 @@ func (w *Writer) WriteArray(values []Value) error {
 	if err := w.writeCRLF(); err != nil {
 		return err
 	}
-	
+
 	for _, value := range values {
 		if err := w.WriteValue(value); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -147,19 +147,19 @@ func (w *Writer) WriteCommand(cmd string, args ...string) error {
 	if err := w.writeCRLF(); err != nil {
 		return err
 	}
-	
+
 	// Write command name
 	if err := w.WriteBulkStringFromString(cmd); err != nil {
 		return err
 	}
-	
+
 	// Write arguments
 	for _, arg := range args {
 		if err := w.WriteBulkStringFromString(arg); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

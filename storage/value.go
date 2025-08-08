@@ -36,10 +36,10 @@ func (vt ValueType) String() string {
 
 // Value represents a stored value with metadata
 type Value struct {
-	Type     ValueType
-	Data     interface{}
-	Expiry   *time.Time
-	Version  int64 // For optimistic locking
+	Type    ValueType
+	Data    interface{}
+	Expiry  *time.Time
+	Version int64 // For optimistic locking
 }
 
 // IsExpired returns true if the value has expired
@@ -93,9 +93,9 @@ type StreamEntry struct {
 
 // KeyInfo provides metadata about a key
 type KeyInfo struct {
-	Key       string
-	Type      ValueType
-	TTL       time.Duration // -1 for no expiry, -2 for expired/not found
-	Size      int64         // Size in bytes
+	Key        string
+	Type       ValueType
+	TTL        time.Duration // -1 for no expiry, -2 for expired/not found
+	Size       int64         // Size in bytes
 	LastAccess time.Time
 }

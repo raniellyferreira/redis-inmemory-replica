@@ -21,11 +21,11 @@ const (
 
 // Value represents a parsed RESP value
 type Value struct {
-	Type     ValueType
-	Data     []byte
-	Integer  int64
-	Array    []Value
-	IsNull   bool
+	Type    ValueType
+	Data    []byte
+	Integer int64
+	Array   []Value
+	IsNull  bool
 }
 
 // String returns a string representation of the value
@@ -92,17 +92,17 @@ func ParseCommand(v Value) (*Command, error) {
 	if v.Type != TypeArray || len(v.Array) == 0 {
 		return nil, fmt.Errorf("invalid command format")
 	}
-	
+
 	cmd := &Command{
 		Args: make([][]byte, len(v.Array)-1),
 	}
-	
+
 	// First element is the command name
 	if v.Array[0].Type != TypeBulkString {
 		return nil, fmt.Errorf("command name must be bulk string")
 	}
 	cmd.Name = strings.ToUpper(string(v.Array[0].Data))
-	
+
 	// Remaining elements are arguments
 	for i := 1; i < len(v.Array); i++ {
 		if v.Array[i].Type != TypeBulkString {
@@ -110,7 +110,7 @@ func ParseCommand(v Value) (*Command, error) {
 		}
 		cmd.Args[i-1] = v.Array[i].Data
 	}
-	
+
 	return cmd, nil
 }
 
