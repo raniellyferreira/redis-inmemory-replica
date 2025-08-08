@@ -74,6 +74,18 @@ check_prerequisites() {
         fi
     fi
     
+    # Install lsof if not available (for port checking)
+    if ! command -v lsof &> /dev/null; then
+        log_warning "lsof not found. Installing for port checking..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get install -y lsof
+        elif command -v brew &> /dev/null; then
+            brew install lsof
+        else
+            log_warning "Cannot install lsof. Port checking will be limited."
+        fi
+    fi
+    
     # Check if act is available (for GitHub Actions compatibility)
     if command -v act &> /dev/null; then
         log_success "nektos/act found - can run GitHub Actions locally"
@@ -88,6 +100,9 @@ check_prerequisites() {
 setup_test_env() {
     log_info "Setting up test environment..."
     
+    # Clean up any existing Redis containers from previous runs
+    cleanup_redis_containers
+    
     # Create test data directory
     mkdir -p "$TEST_DATA_DIR"
     
@@ -98,6 +113,37 @@ setup_test_env() {
     log_success "Test environment setup complete"
 }
 
+# Clean up any existing Redis containers
+cleanup_redis_containers() {
+    log_info "Cleaning up existing Redis containers..."
+    
+    # Stop and remove all test Redis containers
+    local redis_containers=$(docker ps -a --filter "name=redis-test-" --format "{{.Names}}" 2>/dev/null || true)
+    if [ -n "$redis_containers" ]; then
+        log_info "Found existing Redis test containers: $redis_containers"
+        echo "$redis_containers" | xargs -r docker stop --time 5 2>/dev/null || true
+        echo "$redis_containers" | xargs -r docker rm 2>/dev/null || true
+    fi
+    
+    # Stop any auth containers too
+    local auth_containers=$(docker ps -a --filter "name=redis-auth-" --format "{{.Names}}" 2>/dev/null || true)
+    if [ -n "$auth_containers" ]; then
+        log_info "Found existing Redis auth containers: $auth_containers"
+        echo "$auth_containers" | xargs -r docker stop --time 5 2>/dev/null || true
+        echo "$auth_containers" | xargs -r docker rm 2>/dev/null || true
+    fi
+    
+    # Additional safety: stop any containers using Redis ports
+    local port_containers=$(docker ps --filter "publish=6379" --filter "publish=6380" --format "{{.Names}}" 2>/dev/null || true)
+    if [ -n "$port_containers" ]; then
+        log_warning "Found containers using Redis ports: $port_containers"
+        echo "$port_containers" | xargs -r docker stop --time 5 2>/dev/null || true
+        echo "$port_containers" | xargs -r docker rm 2>/dev/null || true
+    fi
+    
+    log_success "Container cleanup complete"
+}
+
 # Start Redis container for specific version
 start_redis() {
     local version="$1"
@@ -106,9 +152,18 @@ start_redis() {
     
     log_info "Starting Redis $version on port $port..."
     
-    # Stop and remove existing container
-    docker stop "$container_name" 2>/dev/null || true
-    docker rm "$container_name" 2>/dev/null || true
+    # Ensure any previous containers are fully stopped and removed
+    stop_redis "$version"
+    
+    # Additional safety: kill any processes using the port (if lsof is available)
+    if command -v lsof &> /dev/null; then
+        local port_pid=$(lsof -ti:$port 2>/dev/null || true)
+        if [ -n "$port_pid" ]; then
+            log_warning "Found process using port $port: $port_pid"
+            kill -9 $port_pid 2>/dev/null || true
+            sleep 1
+        fi
+    fi
     
     # Determine image tag
     local image_tag
@@ -119,6 +174,7 @@ start_redis() {
     fi
     
     # Start Redis container
+    log_info "Starting container $container_name with image $image_tag"
     docker run -d \
         --name "$container_name" \
         -p "$port:6379" \
@@ -140,6 +196,14 @@ start_redis() {
             # Verify version
             local actual_version=$(redis-cli -h localhost -p "$port" INFO server | grep redis_version | cut -d: -f2 | tr -d '\r')
             log_info "Actual Redis version: $actual_version"
+            
+            # Double-check that we're connected to the right version
+            if [[ "$actual_version" == "$version"* ]]; then
+                log_success "Version verification passed: $actual_version matches expected $version"
+            else
+                log_warning "Version mismatch: got $actual_version, expected $version"
+            fi
+            
             return 0
         fi
         
@@ -160,8 +224,40 @@ stop_redis() {
     local container_name="redis-test-$version"
     
     log_info "Stopping Redis $version..."
-    docker stop "$container_name" 2>/dev/null || true
+    
+    # Stop the container with a timeout
+    if docker ps --filter "name=$container_name" --format "{{.Names}}" | grep -q "^$container_name$"; then
+        log_info "Container $container_name is running, stopping it..."
+        docker stop "$container_name" --time 10 2>/dev/null || true
+        
+        # Wait for container to fully stop
+        local max_attempts=30
+        for ((i=1; i<=max_attempts; i++)); do
+            if ! docker ps --filter "name=$container_name" --format "{{.Names}}" | grep -q "^$container_name$"; then
+                log_info "Container $container_name stopped successfully"
+                break
+            fi
+            if [ "$i" -eq "$max_attempts" ]; then
+                log_warning "Container $container_name did not stop gracefully, forcing removal"
+                docker kill "$container_name" 2>/dev/null || true
+            fi
+            sleep 1
+        done
+    fi
+    
+    # Remove the container
     docker rm "$container_name" 2>/dev/null || true
+    
+    # Additional cleanup: stop any containers using port 6379
+    local port_containers=$(docker ps --filter "publish=6379" --format "{{.Names}}" 2>/dev/null || true)
+    if [ -n "$port_containers" ]; then
+        log_warning "Found containers still using port 6379: $port_containers"
+        echo "$port_containers" | xargs -r docker stop --time 5 2>/dev/null || true
+        echo "$port_containers" | xargs -r docker rm 2>/dev/null || true
+    fi
+    
+    # Wait a bit to ensure port is released
+    sleep 2
 }
 
 # Prepare test data for specific Redis version
