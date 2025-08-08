@@ -34,11 +34,19 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		t.Fatalf("Failed to clear Redis: %v", err)
 	}
 
-	// Create replica
-	replica, err := redisreplica.New(
+	// Create replica with authentication if needed
+	options := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
 		redisreplica.WithSyncTimeout(30*time.Second),
-	)
+	}
+	
+	// Add authentication if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisPassword != "" {
+		options = append(options, redisreplica.WithMasterAuth(redisPassword))
+	}
+	
+	replica, err := redisreplica.New(options...)
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
@@ -243,11 +251,19 @@ func TestRDBParsingRobustness(t *testing.T) {
 	// Small delay to ensure persistence is complete
 	time.Sleep(100 * time.Millisecond)
 
-	// Create replica and test full sync
-	replica, err := redisreplica.New(
+	// Create replica and test full sync with authentication if needed
+	options := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
 		redisreplica.WithSyncTimeout(30*time.Second),
-	)
+	}
+	
+	// Add authentication if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisPassword != "" {
+		options = append(options, redisreplica.WithMasterAuth(redisPassword))
+	}
+	
+	replica, err := redisreplica.New(options...)
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
@@ -321,6 +337,41 @@ func isRedisAvailable(addr string) bool {
 	}
 	defer conn.Close()
 
+	// Authenticate if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisUsername := os.Getenv("REDIS_USERNAME")
+	
+	if redisPassword != "" {
+		var authCmd string
+		if redisUsername != "" {
+			// AUTH username password (Redis 6.0+ ACL)
+			authCmd = fmt.Sprintf("*3\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+				len(redisUsername), redisUsername, len(redisPassword), redisPassword)
+		} else {
+			// AUTH password (Redis < 6.0 or simple password)
+			authCmd = fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", 
+				len(redisPassword), redisPassword)
+		}
+		
+		_, err = conn.Write([]byte(authCmd))
+		if err != nil {
+			return false
+		}
+		
+		// Read auth response
+		buf := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			return false
+		}
+		
+		// Check if auth was successful (should contain "+OK")
+		if !strings.Contains(string(buf[:n]), "+OK") {
+			return false
+		}
+	}
+
 	// Send PING command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
 	if err != nil {
@@ -346,6 +397,41 @@ func clearRedis(addr string) error {
 	}
 	defer conn.Close()
 
+	// Authenticate if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisUsername := os.Getenv("REDIS_USERNAME")
+	
+	if redisPassword != "" {
+		var authCmd string
+		if redisUsername != "" {
+			// AUTH username password (Redis 6.0+ ACL)
+			authCmd = fmt.Sprintf("*3\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+				len(redisUsername), redisUsername, len(redisPassword), redisPassword)
+		} else {
+			// AUTH password (Redis < 6.0 or simple password)
+			authCmd = fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", 
+				len(redisPassword), redisPassword)
+		}
+		
+		_, err = conn.Write([]byte(authCmd))
+		if err != nil {
+			return err
+		}
+		
+		// Read auth response
+		buf := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			return err
+		}
+		
+		// Check if auth was successful (should contain "+OK")
+		if !strings.Contains(string(buf[:n]), "+OK") {
+			return fmt.Errorf("authentication failed: %s", string(buf[:n]))
+		}
+	}
+
 	// Send FLUSHALL command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n"))
 	if err != nil {
@@ -369,6 +455,41 @@ func setRedisKey(addr, key, value string) error {
 		return err
 	}
 	defer conn.Close()
+
+	// Authenticate if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisUsername := os.Getenv("REDIS_USERNAME")
+	
+	if redisPassword != "" {
+		var authCmd string
+		if redisUsername != "" {
+			// AUTH username password (Redis 6.0+ ACL)
+			authCmd = fmt.Sprintf("*3\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+				len(redisUsername), redisUsername, len(redisPassword), redisPassword)
+		} else {
+			// AUTH password (Redis < 6.0 or simple password)
+			authCmd = fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", 
+				len(redisPassword), redisPassword)
+		}
+		
+		_, err = conn.Write([]byte(authCmd))
+		if err != nil {
+			return err
+		}
+		
+		// Read auth response
+		buf := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			return err
+		}
+		
+		// Check if auth was successful (should contain "+OK")
+		if !strings.Contains(string(buf[:n]), "+OK") {
+			return fmt.Errorf("authentication failed: %s", string(buf[:n]))
+		}
+	}
 
 	// Send SET command using proper RESP protocol (array of bulk strings)
 	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
@@ -395,6 +516,41 @@ func deleteRedisKey(addr, key string) error {
 		return err
 	}
 	defer conn.Close()
+
+	// Authenticate if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisUsername := os.Getenv("REDIS_USERNAME")
+	
+	if redisPassword != "" {
+		var authCmd string
+		if redisUsername != "" {
+			// AUTH username password (Redis 6.0+ ACL)
+			authCmd = fmt.Sprintf("*3\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+				len(redisUsername), redisUsername, len(redisPassword), redisPassword)
+		} else {
+			// AUTH password (Redis < 6.0 or simple password)
+			authCmd = fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", 
+				len(redisPassword), redisPassword)
+		}
+		
+		_, err = conn.Write([]byte(authCmd))
+		if err != nil {
+			return err
+		}
+		
+		// Read auth response
+		buf := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			return err
+		}
+		
+		// Check if auth was successful (should contain "+OK")
+		if !strings.Contains(string(buf[:n]), "+OK") {
+			return fmt.Errorf("authentication failed: %s", string(buf[:n]))
+		}
+	}
 
 	// Send DEL command using proper RESP protocol
 	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
@@ -454,10 +610,18 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 		b.Fatalf("Failed to clear Redis: %v", err)
 	}
 
-	// Create replica
-	replica, err := redisreplica.New(
+	// Create replica with authentication if needed
+	options := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
-	)
+	}
+	
+	// Add authentication if password is provided
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisPassword != "" {
+		options = append(options, redisreplica.WithMasterAuth(redisPassword))
+	}
+	
+	replica, err := redisreplica.New(options...)
 	if err != nil {
 		b.Fatalf("Failed to create replica: %v", err)
 	}
