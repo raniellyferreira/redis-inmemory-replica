@@ -346,12 +346,13 @@ run_tests() {
         return 1
     fi
     
-    # Run RDB parsing tests - skip if they don't exist or consistently fail
+    # Run RDB parsing tests - these are critical for replication functionality
     log_info "Running RDB parsing tests..."
-    if go test -v -timeout 60s -run TestRDBParsingRobustness . 2>/dev/null; then
+    if go test -v -timeout 60s -run TestRDBParsingRobustness .; then
         log_success "RDB parsing tests passed for Redis $version"
     else
-        log_warning "RDB parsing tests failed or not found for Redis $version (non-critical)"
+        log_error "RDB parsing tests failed for Redis $version"
+        return 1
     fi
     
     # Run performance benchmark

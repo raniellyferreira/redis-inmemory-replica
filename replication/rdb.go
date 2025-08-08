@@ -23,6 +23,8 @@ const (
 	RDBOpcodeExpiryMs = 0xFC
 	RDBOpcodeResizeDB = 0xFB
 	RDBOpcodeAux      = 0xFA
+	RDBOpcodeFreq     = 0xF9  // LFU frequency
+	RDBOpcodeIdle     = 0xF8  // LRU idle time
 
 	// Type constants
 	RDBTypeString          = 0
@@ -223,6 +225,22 @@ func (p *RDBParser) Parse() error {
 					return fmt.Errorf("failed to read aux field: %w", err)
 				}
 				// Continue parsing even if aux field fails
+			}
+
+		case RDBOpcodeFreq:
+			// LFU frequency - read and skip
+			if _, err := p.br.ReadByte(); err != nil {
+				if !p.canSkipError() {
+					return fmt.Errorf("failed to read LFU frequency: %w", err)
+				}
+			}
+
+		case RDBOpcodeIdle:
+			// LRU idle time - read length-encoded value and skip
+			if _, err := p.readLength(); err != nil {
+				if !p.canSkipError() {
+					return fmt.Errorf("failed to read LRU idle time: %w", err)
+				}
 			}
 
 		default:
