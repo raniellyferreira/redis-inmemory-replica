@@ -253,20 +253,25 @@ func (r *Reader) ReadBulkString(fn func(chunk []byte) error) error {
 }
 
 // ReadBulkStringForReplication reads a bulk string for replication context.
-// This is specifically for RDB data in replication where the '$' is part of the length line.
+// This reads the bulk string header ($length\r\n) and then the data.
 func (r *Reader) ReadBulkStringForReplication(fn func(chunk []byte) error) error {
-	// Read the full line including the '$' prefix
+	// Read the '$' type byte
+	typeByte, err := r.br.ReadByte()
+	if err != nil {
+		return fmt.Errorf("failed to read bulk string type byte: %w", err)
+	}
+
+	if ValueType(typeByte) != TypeBulkString {
+		return fmt.Errorf("expected bulk string marker '$', got %c", typeByte)
+	}
+
+	// Read the length line  
 	line, err := r.readLine()
 	if err != nil {
 		return fmt.Errorf("failed to read bulk string length line: %w", err)
 	}
 
-	// Parse the bulk string length (skip the '$' prefix)
-	if len(line) == 0 || line[0] != '$' {
-		return fmt.Errorf("expected bulk string marker '$', got: %s", line)
-	}
-
-	length, err := strconv.ParseInt(string(line[1:]), 10, 64)
+	length, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid bulk string length: %s", line)
 	}
