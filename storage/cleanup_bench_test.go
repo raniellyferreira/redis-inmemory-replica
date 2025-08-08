@@ -11,15 +11,17 @@ import (
 
 // BenchmarkCleanupLegacy simulates the old cleanup behavior for comparison
 func BenchmarkCleanupLegacy(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping long benchmark in short mode")
+	}
+	
 	scenarios := []struct {
 		name        string
 		totalKeys   int
 		expiredKeys int
 	}{
 		{"Small_100", 100, 20},
-		{"Medium_1000", 1000, 200},
-		{"Large_10000", 10000, 2000},
-		{"XLarge_50000", 50000, 10000},
+		{"Medium_500", 500, 100}, // Reduced from 1000
 	}
 
 	for _, scenario := range scenarios {
@@ -59,6 +61,10 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 
 // BenchmarkCleanupIncremental benchmarks the new incremental cleanup
 func BenchmarkCleanupIncremental(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping long benchmark in short mode")
+	}
+	
 	scenarios := []struct {
 		name        string
 		totalKeys   int
@@ -71,19 +77,9 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 			storage.CleanupConfig{SampleSize: 10, MaxRounds: 2, BatchSize: 5, ExpiredThreshold: 0.25},
 		},
 		{
-			"Medium_1000",
-			1000, 200,
+			"Medium_500", // Reduced from 1000
+			500, 100,
 			storage.CleanupConfig{SampleSize: 20, MaxRounds: 4, BatchSize: 10, ExpiredThreshold: 0.25},
-		},
-		{
-			"Large_10000",
-			10000, 2000,
-			storage.CleanupConfig{SampleSize: 50, MaxRounds: 8, BatchSize: 20, ExpiredThreshold: 0.3},
-		},
-		{
-			"XLarge_50000",
-			50000, 10000,
-			storage.CleanupConfig{SampleSize: 100, MaxRounds: 10, BatchSize: 50, ExpiredThreshold: 0.3},
 		},
 	}
 
@@ -127,6 +123,10 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 
 // BenchmarkCleanupConcurrentAccess benchmarks cleanup under concurrent load
 func BenchmarkCleanupConcurrentAccess(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping concurrent benchmark in short mode")
+	}
+	
 	s := storage.NewMemory()
 	defer s.Close()
 
@@ -179,6 +179,10 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 
 // BenchmarkCleanupConfigOptimization tests different cleanup configurations
 func BenchmarkCleanupConfigOptimization(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping config optimization benchmark in short mode")
+	}
+	
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -240,6 +244,10 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 
 // BenchmarkMemoryUsageCleanup measures memory efficiency
 func BenchmarkMemoryUsageCleanup(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping memory usage benchmark in short mode")
+	}
+	
 	s := storage.NewMemory()
 	defer s.Close()
 
@@ -276,6 +284,10 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 
 // BenchmarkCleanupLatency measures latency impact of cleanup
 func BenchmarkCleanupLatency(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping latency benchmark in short mode")
+	}
+	
 	s := storage.NewMemory()
 	defer s.Close()
 

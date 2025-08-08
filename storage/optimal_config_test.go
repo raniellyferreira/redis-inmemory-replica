@@ -126,6 +126,10 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 
 // BenchmarkOptimalConfigurations compares configurations under load
 func BenchmarkOptimalConfigurations(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping optimal configurations benchmark in short mode")
+	}
+	
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
