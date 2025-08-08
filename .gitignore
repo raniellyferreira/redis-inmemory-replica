@@ -11,6 +11,9 @@
 # Example binaries
 **/examples/**/pattern-matching-demo
 **/examples/**/*-example
+basic
+monitoring  
+database-filtering
 
 # Binary directory
 bin/
