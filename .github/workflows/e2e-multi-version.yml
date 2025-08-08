@@ -78,6 +78,10 @@ jobs:
         docker stop redis-test || true
         docker rm redis-test || true
         
+        # Create test-data directory with proper permissions
+        mkdir -p test-data
+        chmod 755 test-data
+        
         # Start Redis with enhanced configuration for testing
         docker run -d \
           --name redis-test \
@@ -157,6 +161,14 @@ jobs:
         done
         
         echo "Test data prepared and persisted"
+
+    - name: Fix test-data permissions
+      run: |
+        # Fix ownership and permissions of test-data directory
+        # Files created by Docker container may have different ownership
+        sudo chown -R runner:docker test-data/ || sudo chown -R $USER:$USER test-data/ || true
+        chmod -R 755 test-data/ || true
+        echo "Test data permissions fixed"
 
     - name: Run E2E Tests
       run: |
@@ -269,6 +281,8 @@ jobs:
         docker stop redis-test || true
         docker rm redis-test || true
         rm -f version_specific_test.go
+        # Clean up test-data directory
+        sudo rm -rf test-data/ || rm -rf test-data/ || true
 
   # Authentication testing across versions
   e2e-auth:
@@ -352,6 +366,8 @@ jobs:
       run: |
         docker stop redis-auth || true
         docker rm redis-auth || true
+        # Clean up any test data created during auth tests
+        sudo rm -rf test-data/ || rm -rf test-data/ || true
 
   # Compatibility report generation
   compatibility-report:

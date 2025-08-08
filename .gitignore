@@ -38,3 +38,6 @@ go.work.sum
 # .idea/
 # .vscode/
 test_output.txt
+
+# Test data directories created by Redis containers
+test-data/
