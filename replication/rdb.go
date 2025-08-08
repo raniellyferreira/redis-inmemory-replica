@@ -338,40 +338,72 @@ func (p *RDBParser) readKeyValue(valueType byte, expiry *time.Time) error {
 
 // readBinaryString reads a string that may contain binary data
 func (p *RDBParser) readBinaryString() ([]byte, error) {
-	length, err := p.readLength()
-	if err != nil {
-		return nil, err
-	}
-
-	// Handle empty string
-	if length == 0 {
-		return []byte{}, nil
-	}
-
-	// Guard against extremely large strings that might indicate parser errors
-	if length > 100000 { // 100KB is reasonable max for RDB strings
-		return nil, fmt.Errorf("string length too large: %d", length)
-	}
-
-	// Allocate exact buffer size needed for the string data
-	data := make([]byte, length)
-	n, err := io.ReadFull(p.br, data)
-	if err != nil {
-		// For binary aux fields, partial reads might be acceptable
-		if p.strategy.supportsBinaryAux && n > 0 && err == io.ErrUnexpectedEOF {
-			return data[:n], nil
-		}
-		return nil, fmt.Errorf("failed to read binary string data: %w", err)
-	}
-
-	return data, nil
+	// Use the same string reading logic but handle binary data
+	return p.readString()
 }
 func (p *RDBParser) readString() ([]byte, error) {
-	length, err := p.readLength()
+	// First byte determines the encoding
+	b, err := p.br.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
+	switch (b & 0xC0) >> 6 {
+	case 0:
+		// 6-bit length
+		length := uint64(b & 0x3F)
+		return p.readStringData(length)
+
+	case 1:
+		// 14-bit length
+		b2, err := p.br.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		length := uint64(b&0x3F)<<8 | uint64(b2)
+		return p.readStringData(length)
+
+	case 2:
+		// 32-bit length
+		var length uint32
+		if err := binary.Read(p.br, binary.BigEndian, &length); err != nil {
+			return nil, err
+		}
+		return p.readStringData(uint64(length))
+
+	case 3:
+		// Special encoding - string content is encoded as integer
+		switch b & 0x3F {
+		case 0:
+			// 8-bit integer
+			val, err := p.br.ReadByte()
+			if err != nil {
+				return nil, err
+			}
+			return []byte(fmt.Sprintf("%d", val)), nil
+		case 1:
+			// 16-bit integer
+			var val uint16
+			if err := binary.Read(p.br, binary.LittleEndian, &val); err != nil {
+				return nil, err
+			}
+			return []byte(fmt.Sprintf("%d", val)), nil
+		case 2:
+			// 32-bit integer  
+			var val int32  // Use signed integer
+			if err := binary.Read(p.br, binary.LittleEndian, &val); err != nil {
+				return nil, err
+			}
+			return []byte(fmt.Sprintf("%d", val)), nil
+		default:
+			return nil, fmt.Errorf("invalid special string encoding: %d", b&0x3F)
+		}
+	}
+
+	return nil, fmt.Errorf("invalid string encoding: %d", (b&0xC0)>>6)
+}
+
+func (p *RDBParser) readStringData(length uint64) ([]byte, error) {
 	// Handle empty string
 	if length == 0 {
 		return []byte{}, nil

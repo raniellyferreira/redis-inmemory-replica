@@ -962,11 +962,11 @@ func (l *defaultLogger) Debug(msg string, fields ...interface{}) {
 }
 
 func (l *defaultLogger) Info(msg string, fields ...interface{}) {
-	// fmt.Printf("INFO: %s %v\n", msg, fields)
+	fmt.Printf("INFO: %s %v\n", msg, fields)
 }
 
 func (l *defaultLogger) Error(msg string, fields ...interface{}) {
-	// fmt.Printf("ERROR: %s %v\n", msg, fields)
+	fmt.Printf("ERROR: %s %v\n", msg, fields)
 }
 
 // setConnectionTimeouts sets enhanced connection timeouts with improved error handling

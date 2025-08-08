@@ -321,8 +321,8 @@ func isRedisAvailable(addr string) bool {
 	}
 	defer conn.Close()
 
-	// Send PING command
-	_, err = conn.Write([]byte("PING\r\n"))
+	// Send PING command using proper RESP protocol
+	_, err = conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
 	if err != nil {
 		return false
 	}
@@ -346,8 +346,8 @@ func clearRedis(addr string) error {
 	}
 	defer conn.Close()
 
-	// Send FLUSHALL command
-	_, err = conn.Write([]byte("FLUSHALL\r\n"))
+	// Send FLUSHALL command using proper RESP protocol
+	_, err = conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n"))
 	if err != nil {
 		return err
 	}
@@ -370,8 +370,9 @@ func setRedisKey(addr, key, value string) error {
 	}
 	defer conn.Close()
 
-	// Send SET command
-	cmd := fmt.Sprintf("SET %s %s\r\n", key, value)
+	// Send SET command using proper RESP protocol (array of bulk strings)
+	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+		len(key), key, len(value), value)
 	_, err = conn.Write([]byte(cmd))
 	if err != nil {
 		return err
@@ -395,8 +396,8 @@ func deleteRedisKey(addr, key string) error {
 	}
 	defer conn.Close()
 
-	// Send DEL command
-	cmd := fmt.Sprintf("DEL %s\r\n", key)
+	// Send DEL command using proper RESP protocol
+	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
 	_, err = conn.Write([]byte(cmd))
 	if err != nil {
 		return err
@@ -420,8 +421,8 @@ func forcePersistRedis(addr string) error {
 	}
 	defer conn.Close()
 
-	// Send BGSAVE command to force background save
-	_, err = conn.Write([]byte("BGSAVE\r\n"))
+	// Send BGSAVE command using proper RESP protocol
+	_, err = conn.Write([]byte("*1\r\n$6\r\nBGSAVE\r\n"))
 	if err != nil {
 		return err
 	}
