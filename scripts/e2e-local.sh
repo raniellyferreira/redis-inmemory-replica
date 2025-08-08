@@ -196,10 +196,6 @@ prepare_test_data() {
             redis-cli -h localhost -p "$port" SET "test:basic" "value"
             ;;
     esac
-            test_focus="standard"
-            redis-cli -h localhost -p "$port" SET "test:basic" "value"
-            ;;
-    esac
     
     # Force RDB save
     redis-cli -h localhost -p "$port" BGSAVE
@@ -229,7 +225,7 @@ run_tests() {
     
     # Run E2E tests
     log_info "Running E2E tests..."
-    if go test -v -timeout 300s -run TestEndToEndWithRealRedis ./...; then
+    if go test -v -timeout 300s -run TestEndToEndWithRealRedis .; then
         log_success "E2E tests passed for Redis $version"
     else
         log_error "E2E tests failed for Redis $version"
@@ -238,7 +234,7 @@ run_tests() {
     
     # Run RDB parsing tests
     log_info "Running RDB parsing tests..."
-    if go test -v -timeout 300s -run TestRDBParsingRobustness ./...; then
+    if go test -v -timeout 300s -run TestRDBParsingRobustness .; then
         log_success "RDB parsing tests passed for Redis $version"
     else
         log_error "RDB parsing tests failed for Redis $version"
@@ -247,7 +243,7 @@ run_tests() {
     
     # Run performance benchmark
     log_info "Running performance benchmark..."
-    if go test -v -bench BenchmarkReplicationThroughput -benchtime=3s -timeout 300s ./...; then
+    if go test -v -bench BenchmarkReplicationThroughput -benchtime=3s -timeout 300s .; then
         log_success "Performance benchmark completed for Redis $version"
     else
         log_warning "Performance benchmark failed for Redis $version"

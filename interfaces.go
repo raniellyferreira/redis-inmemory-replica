@@ -1,6 +1,7 @@
 package redisreplica
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -130,6 +131,6 @@ func formatValue(v interface{}) string {
 	case error:
 		return val.Error()
 	default:
-		return ""
+		return fmt.Sprintf("%v", val)
 	}
 }
