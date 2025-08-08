@@ -469,8 +469,8 @@ func (c *Client) performSync() error {
 
 		c.logger.Debug("Full resync initiated", "repl_id", c.replID, "offset", c.replOffset)
 
-		// Perform full sync
-		if err := c.performFullSync(); err != nil {
+		// Read RDB data immediately after PSYNC response
+		if err := c.readRDBData(); err != nil {
 			return err
 		}
 	} else {
@@ -512,9 +512,9 @@ func (c *Client) sendPSYNC() error {
 	return c.writer.Flush()
 }
 
-// performFullSync performs full synchronization via RDB
-func (c *Client) performFullSync() error {
-	c.logger.Debug("Performing full sync")
+// readRDBData reads RDB data immediately after PSYNC response
+func (c *Client) readRDBData() error {
+	c.logger.Debug("Reading RDB data stream")
 
 	// Create RDB handler
 	handler := &rdbStorageHandler{
@@ -529,7 +529,7 @@ func (c *Client) performFullSync() error {
 		logger: c.logger,
 	}
 
-	// Read RDB data as streaming bulk string
+	// Read RDB data as streaming bulk string (no need to read type byte, it's already a bulk string)
 	c.logger.Debug("Reading RDB data stream")
 	err := c.reader.ReadBulkStringForReplication(func(chunk []byte) error {
 		if chunk == nil {
