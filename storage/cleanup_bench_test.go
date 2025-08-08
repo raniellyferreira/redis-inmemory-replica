@@ -14,7 +14,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping long benchmark in short mode")
 	}
-	
+
 	scenarios := []struct {
 		name        string
 		totalKeys   int
@@ -64,7 +64,7 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping long benchmark in short mode")
 	}
-	
+
 	scenarios := []struct {
 		name        string
 		totalKeys   int
@@ -126,7 +126,7 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping concurrent benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
 	defer s.Close()
 
@@ -182,7 +182,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping config optimization benchmark in short mode")
 	}
-	
+
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -247,7 +247,7 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping memory usage benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
 	defer s.Close()
 
@@ -287,7 +287,7 @@ func BenchmarkCleanupLatency(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping latency benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
 	defer s.Close()
 

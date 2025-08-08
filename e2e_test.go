@@ -120,7 +120,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	// Verify deletion in replica with proper timeout
 	replicaStorage := replica.Storage()
-	
+
 	// Wait for deletion to propagate (give it some time)
 	deleted := false
 	for i := 0; i < 50; i++ { // Wait up to 5 seconds
@@ -130,7 +130,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	if !deleted {
 		t.Error("Key test:key1 should have been deleted from replica but still exists")
 	} else {
@@ -233,13 +233,13 @@ func TestRDBParsingRobustness(t *testing.T) {
 			t.Errorf("Failed to set key %s: %v", key, err)
 		}
 	}
-	
+
 	// Force Redis to persist data to RDB before starting replication
 	// This ensures all test data is available during full sync
 	if err := forcePersistRedis(redisAddr); err != nil {
 		t.Errorf("Failed to force Redis persistence: %v", err)
 	}
-	
+
 	// Small delay to ensure persistence is complete
 	time.Sleep(100 * time.Millisecond)
 
@@ -278,13 +278,13 @@ func TestRDBParsingRobustness(t *testing.T) {
 
 	// Verify all data was correctly parsed with proper error handling
 	replicaStorage := replica.Storage()
-	
+
 	// Allow some time for all data to be available
 	time.Sleep(500 * time.Millisecond)
-	
+
 	missingKeys := []string{}
 	mismatchedKeys := []string{}
-	
+
 	for key, expectedValue := range testData {
 		value, exists := replicaStorage.Get(key)
 		if !exists {
@@ -297,7 +297,7 @@ func TestRDBParsingRobustness(t *testing.T) {
 			}
 		}
 	}
-	
+
 	// Report all errors at once for better debugging
 	if len(missingKeys) > 0 {
 		t.Errorf("Missing keys after RDB parsing: %v", missingKeys)
@@ -305,7 +305,7 @@ func TestRDBParsingRobustness(t *testing.T) {
 	if len(mismatchedKeys) > 0 {
 		t.Errorf("Mismatched values after RDB parsing: %v", mismatchedKeys)
 	}
-	
+
 	// Only log success if no errors
 	if len(missingKeys) == 0 && len(mismatchedKeys) == 0 {
 		t.Log("✅ All RDB data correctly parsed and stored")
@@ -371,7 +371,7 @@ func setRedisKey(addr, key, value string) error {
 	defer conn.Close()
 
 	// Send SET command using proper RESP protocol (array of bulk strings)
-	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
 		len(key), key, len(value), value)
 	_, err = conn.Write([]byte(cmd))
 	if err != nil {
@@ -450,7 +450,7 @@ func TestFullSyncAndIncremental(t *testing.T) {
 	}
 
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	
+
 	t.Log("Testing full sync followed by incremental replication")
 
 	// Phase 1: Prepare initial data for full sync
@@ -475,14 +475,14 @@ func TestFullSyncAndIncremental(t *testing.T) {
 	if err := forcePersistRedisWithAuth(redisAddr, redisPassword); err != nil {
 		t.Errorf("Failed to force Redis persistence: %v", err)
 	}
-	
+
 	time.Sleep(200 * time.Millisecond) // Wait for persistence
 
 	// Phase 2: Start replica and test full sync
 	var replicaOptions []redisreplica.Option
 	replicaOptions = append(replicaOptions, redisreplica.WithMaster(redisAddr))
 	replicaOptions = append(replicaOptions, redisreplica.WithSyncTimeout(30*time.Second))
-	
+
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
 	}
@@ -559,7 +559,7 @@ func TestFullSyncAndIncremental(t *testing.T) {
 
 	// Phase 4: Test updates and deletions
 	t.Log("Testing incremental updates and deletions...")
-	
+
 	// Update an initial key
 	if err := setRedisKeyWithAuth(redisAddr, redisPassword, "init:key1", "updated_value"); err != nil {
 		t.Errorf("Failed to update key: %v", err)
@@ -615,22 +615,22 @@ func TestRedis7xFeatures(t *testing.T) {
 	// Test various data types and encodings that might trigger the encoding 33 issue
 	testCases := map[string]string{
 		// Small integers (should use integer encoding)
-		"int:small":    "1",
-		"int:medium":   "12345",
-		"int:large":    "9223372036854775807", // Max int64
-		
+		"int:small":  "1",
+		"int:medium": "12345",
+		"int:large":  "9223372036854775807", // Max int64
+
 		// Strings that might trigger special encodings
-		"str:empty":    "",
-		"str:single":   "a",
-		"str:numbers":  "123456789012345678901234567890", // Long number string
-		
+		"str:empty":   "",
+		"str:single":  "a",
+		"str:numbers": "123456789012345678901234567890", // Long number string
+
 		// Binary-like data
-		"bin:data":     string([]byte{0x00, 0x01, 0x02, 0x21, 0xFF}), // Include 0x21 (33)
-		
+		"bin:data": string([]byte{0x00, 0x01, 0x02, 0x21, 0xFF}), // Include 0x21 (33)
+
 		// Unicode and special characters
 		"unicode:emoji": "🚀💾📡",
 		"unicode:mixed": "Hello世界🌍",
-		
+
 		// Large strings that might be compressed
 		"large:string": string(make([]byte, 1000)), // 1KB of zeros
 		"large:text":   "Redis 7.x compatibility test " + string(make([]byte, 500)),
@@ -654,7 +654,7 @@ func TestRedis7xFeatures(t *testing.T) {
 	var replicaOptions []redisreplica.Option
 	replicaOptions = append(replicaOptions, redisreplica.WithMaster(redisAddr))
 	replicaOptions = append(replicaOptions, redisreplica.WithSyncTimeout(30*time.Second))
-	
+
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
 	}
@@ -700,7 +700,7 @@ func TestRedis7xFeatures(t *testing.T) {
 			// For binary data, compare byte by byte
 			if key == "bin:data" {
 				if len(value) != len(expectedValue) {
-					t.Errorf("Binary data key %s length mismatch: expected %d, got %d", 
+					t.Errorf("Binary data key %s length mismatch: expected %d, got %d",
 						key, len(expectedValue), len(value))
 				} else {
 					match := true
@@ -717,7 +717,7 @@ func TestRedis7xFeatures(t *testing.T) {
 					}
 				}
 			} else if string(value) != expectedValue {
-				t.Errorf("Redis 7.x feature key %s: expected %v, got %v", 
+				t.Errorf("Redis 7.x feature key %s: expected %v, got %v",
 					key, expectedValue, string(value))
 			} else {
 				successCount++
@@ -726,7 +726,7 @@ func TestRedis7xFeatures(t *testing.T) {
 	}
 
 	t.Logf("✅ Redis 7.x features test: %d/%d test cases passed", successCount, len(testCases))
-	
+
 	if successCount == len(testCases) {
 		t.Log("✅ All Redis 7.x feature tests passed - no encoding 33 errors detected")
 	}
@@ -738,7 +738,7 @@ func setRedisKeyWithAuth(addr, password, key, value string) error {
 	if password == "" {
 		return setRedisKey(addr, key, value)
 	}
-	
+
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
@@ -759,7 +759,7 @@ func setRedisKeyWithAuth(addr, password, key, value string) error {
 	}
 
 	// Send SET command
-	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", 
+	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
 		len(key), key, len(value), value)
 	if _, err := conn.Write([]byte(cmd)); err != nil {
 		return err
@@ -778,7 +778,7 @@ func deleteRedisKeyWithAuth(addr, password, key string) error {
 	if password == "" {
 		return deleteRedisKey(addr, key)
 	}
-	
+
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
@@ -817,7 +817,7 @@ func forcePersistRedisWithAuth(addr, password string) error {
 	if password == "" {
 		return forcePersistRedis(addr)
 	}
-	
+
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
@@ -855,7 +855,7 @@ func clearRedisWithAuth(addr, password string) error {
 	if password == "" {
 		return clearRedis(addr)
 	}
-	
+
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err

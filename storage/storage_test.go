@@ -550,7 +550,7 @@ func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			
+
 			s := storage.NewMemory()
 			defer s.Close()
 

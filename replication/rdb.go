@@ -12,17 +12,17 @@ import (
 // RDB format constants
 const (
 	// RDB version and opcodes
-	RDBVersion9       = 9
-	RDBVersion10      = 10
-	RDBVersion11      = 11  
-	RDBVersion12      = 12
-	MaxSupportedRDBVersion = 12  // Support up to Redis 7.x RDB format
-	RDBOpcodeEOF      = 0xFF
-	RDBOpcodeDB       = 0xFE
-	RDBOpcodeExpiry   = 0xFD
-	RDBOpcodeExpiryMs = 0xFC
-	RDBOpcodeResizeDB = 0xFB
-	RDBOpcodeAux      = 0xFA
+	RDBVersion9            = 9
+	RDBVersion10           = 10
+	RDBVersion11           = 11
+	RDBVersion12           = 12
+	MaxSupportedRDBVersion = 12 // Support up to Redis 7.x RDB format
+	RDBOpcodeEOF           = 0xFF
+	RDBOpcodeDB            = 0xFE
+	RDBOpcodeExpiry        = 0xFD
+	RDBOpcodeExpiryMs      = 0xFC
+	RDBOpcodeResizeDB      = 0xFB
+	RDBOpcodeAux           = 0xFA
 
 	// Type constants
 	RDBTypeString          = 0
@@ -40,7 +40,7 @@ const (
 	RDBTypeHashZiplist     = 13
 	RDBTypeListQuicklist   = 14
 	RDBTypeStreamListpacks = 15
-	
+
 	// Extended types for newer Redis versions
 	RDBTypeStreamListpacks2 = 19
 	RDBTypeStreamListpacks3 = 20
@@ -301,7 +301,7 @@ func (p *RDBParser) readAuxField() error {
 	} else {
 		value, err = p.readString()
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to read aux value for key %s: %w", key, err)
 	}
@@ -390,8 +390,8 @@ func (p *RDBParser) readString() ([]byte, error) {
 			}
 			return []byte(fmt.Sprintf("%d", val)), nil
 		case 2:
-			// 32-bit integer  
-			var val int32  // Use signed integer
+			// 32-bit integer
+			var val int32 // Use signed integer
 			if err := binary.Read(p.br, binary.LittleEndian, &val); err != nil {
 				return nil, err
 			}
@@ -555,7 +555,7 @@ func (p *RDBParser) readQuicklist() (interface{}, error) {
 			}
 			return nil, err
 		}
-		
+
 		// For simplicity, treat ziplist as a single element
 		// A full implementation would decompress the ziplist
 		allElements = append(allElements, ziplistData)
@@ -599,7 +599,7 @@ func (p *RDBParser) skipUnsupportedType(valueType byte) (interface{}, error) {
 		}
 		return nil, nil // Return nil to indicate skipped value
 	}
-	
+
 	if valueType < 32 {
 		// Encoded types - try to read length then skip data
 		length, err := p.readLength()
@@ -609,7 +609,7 @@ func (p *RDBParser) skipUnsupportedType(valueType byte) (interface{}, error) {
 			}
 			return nil, fmt.Errorf("failed to read length for unsupported type %d: %w", valueType, err)
 		}
-		
+
 		// Skip the data
 		skipData := make([]byte, length)
 		if _, err := io.ReadFull(p.br, skipData); err != nil {
@@ -618,20 +618,20 @@ func (p *RDBParser) skipUnsupportedType(valueType byte) (interface{}, error) {
 			}
 			return nil, fmt.Errorf("failed to skip data for type %d: %w", valueType, err)
 		}
-		
+
 		return nil, nil // Return nil to indicate skipped value
 	}
-	
+
 	// For very unknown types, if we can skip errors, do so
 	if p.canSkipError() {
 		return nil, nil
 	}
-	
+
 	// Only fail hard if we're in strict parsing mode
 	if p.strategy.requiresStrictParsing {
 		return nil, fmt.Errorf("unsupported RDB type: %d", valueType)
 	}
-	
+
 	return nil, nil // Skip silently in permissive mode
 }
 
