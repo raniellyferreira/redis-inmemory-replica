@@ -323,9 +323,6 @@ func isRedisAvailable(addr string) bool {
 
 	// Check if authentication is needed
 	password := os.Getenv("REDIS_PASSWORD")
-	if password == "" {
-		password = os.Getenv("REDIS_FAKE_P") // Support fake password env var
-	}
 
 	if password != "" {
 		// Authenticate first
