@@ -167,7 +167,7 @@ case 3:
 - ✅ Graceful degradation for unsupported features
 
 ### Requirements
-- Go 1.24.5+ (no change)
+- Go 1.23+ (no change)
 - Docker (for testing)
 - Redis 5.0+ (expanded from previous Redis 6.0+ support)
 

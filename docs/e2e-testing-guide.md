@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide explains how to run comprehensive end-to-end tests for the redis-inmemory-replica library across multiple Redis versions (7.0, 7.2, 7.4, 8.0, 8.2).
+This guide explains how to run comprehensive end-to-end tests for the redis-inmemory-replica library across multiple Redis versions (7.0, 7.2, 7.4).
 
 ## Quick Start
 
@@ -28,14 +28,14 @@ cd redis-inmemory-replica
 
 ### Required Software
 
-1. **Go 1.24.5+**
+1. **Go 1.23+**
    ```bash
    # Check Go version
    go version
    
    # Install if needed (example for Linux)
-   wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz
-   sudo tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz
+   wget https://go.dev/dl/go1.23.linux-amd64.tar.gz
+   sudo tar -C /usr/local -xzf go1.23.linux-amd64.tar.gz
    export PATH=$PATH:/usr/local/go/bin
    ```
 
@@ -83,7 +83,6 @@ Tests the library against different Redis versions to ensure compatibility:
 | 7.0.15        | 9, 10       | Basic compatibility, standard encodings |
 | 7.2.4         | 10, 11      | Extended encodings, functions support |
 | 7.4.1         | 11, 12      | Stream improvements, list optimizations |
-| 8.0-rc2       | 12, 13      | New encodings (including encoding 33) |
 
 ### 2. RDB Format Testing
 
@@ -99,8 +98,11 @@ Specific test cases for RDB format variations:
 # Test RDB v12 with streams (Redis 7.4)
 ./scripts/e2e-local.sh --version 7.4.1
 
-# Test RDB v13 with encoding 33 (Redis 8.0)
-./scripts/e2e-local.sh --version 8.0-rc2
+# Test latest stable Redis 7.4
+./scripts/e2e-local.sh --version 7.4.1
+
+# Note: Redis 8.0+ testing requires manual setup
+# RDB parsing supports encoding 33 and future Redis versions
 ```
 
 ### 3. Authentication Testing
@@ -226,7 +228,6 @@ workflow_dispatch:
 | `rdb_v9_v10` | Basic RDB compatibility | 7.0.x |
 | `rdb_v11` | Extended data types | 7.2.x |
 | `rdb_v12` | Stream optimizations | 7.4.x |
-| `rdb_v13` | New encodings (encoding 33) | 8.0.x+ |
 
 ## Troubleshooting
 
@@ -327,11 +328,11 @@ go tool pprof cpu.prof
 
 ### Expected Performance
 
-| Metric | Redis 7.0 | Redis 7.2 | Redis 7.4 | Redis 8.0 |
-|--------|-----------|-----------|-----------|-----------|
-| Sync Speed (1GB RDB) | ~30s | ~25s | ~20s | ~18s |
-| Command Throughput | >50k/s | >60k/s | >70k/s | >80k/s |
-| Memory Overhead | <20% | <18% | <15% | <12% |
+| Metric | Redis 7.0 | Redis 7.2 | Redis 7.4 |
+|--------|-----------|-----------|-----------|
+| Sync Speed (1GB RDB) | ~30s | ~25s | ~20s |
+| Command Throughput | >50k/s | >60k/s | >70k/s |
+| Memory Overhead | <20% | <18% | <15% |
 
 ## Continuous Integration
 
@@ -362,23 +363,23 @@ act -j compatibility-report
 
 1. **Add Redis Version**
    ```bash
-   # Update REDIS_VERSIONS in scripts/e2e-local.sh
-   REDIS_VERSIONS=("7.0.15" "7.2.4" "7.4.1" "8.0-rc2" "8.2-beta")
+   # Update REDIS_VERSIONS in scripts/e2e-local.sh when new stable versions become available
+   REDIS_VERSIONS=("7.0.15" "7.2.4" "7.4.1")
    ```
 
 2. **Create Version-Specific Tests**
    ```go
-   // Add to e2e_test.go
-   func TestRedis82Features(t *testing.T) {
-       // Test Redis 8.2 specific features
+   // Add to e2e_test.go for new Redis features
+   func TestRedisNewFeatures(t *testing.T) {
+       // Test new Redis-specific features when available
    }
    ```
 
 3. **Update Workflows**
    ```yaml
-   # Add to .github/workflows/e2e-multi-version.yml
+   # Add to .github/workflows/e2e-multi-version.yml when Docker images are available
    redis_version:
-     - "8.2-beta"
+     - "7.x.x"  # Add new stable versions
    ```
 
 ### Test Guidelines

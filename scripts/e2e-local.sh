@@ -8,7 +8,7 @@ set -euo pipefail
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REDIS_VERSIONS=("7.0.15" "7.2.4" "7.4.1" "8.0-rc2")
+REDIS_VERSIONS=("7.0.15" "7.2.4" "7.4.1")
 DEFAULT_REDIS_PORT=6379
 TEST_DATA_DIR="$PROJECT_ROOT/test-data"
 
@@ -191,13 +191,11 @@ prepare_test_data() {
             redis-cli -h localhost -p "$port" XADD "test:stream" "*" field1 value1 field2 value2
             redis-cli -h localhost -p "$port" HSET "test:hash" field1 value1 field2 value2
             ;;
-        8.0.*)
-            test_focus="rdb_v13"
-            # Test large values and special encodings
-            redis-cli -h localhost -p "$port" SET "test:large_value" "$(printf 'X%.0s' {1..10000})"
-            redis-cli -h localhost -p "$port" SET "test:encoding_33" "18446744073709551615"
-            ;;
         *)
+            test_focus="standard"
+            redis-cli -h localhost -p "$port" SET "test:basic" "value"
+            ;;
+    esac
             test_focus="standard"
             redis-cli -h localhost -p "$port" SET "test:basic" "value"
             ;;

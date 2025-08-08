@@ -33,7 +33,7 @@ This update implements comprehensive Redis 7.x and 8.x compatibility improvement
 
 ### ✅ 3. Comprehensive E2E Testing Framework
 
-**Implemented**: Multi-version testing supporting Redis 7.0, 7.2, 7.4, 8.0, 8.2
+**Implemented**: Multi-version testing supporting Redis 7.0, 7.2, 7.4
 
 **Components**:
 - GitHub Actions workflow: [`.github/workflows/e2e-multi-version.yml`](.github/workflows/e2e-multi-version.yml)
@@ -41,6 +41,8 @@ This update implements comprehensive Redis 7.x and 8.x compatibility improvement
 - Complete testing guide: [`docs/e2e-testing-guide.md`](docs/e2e-testing-guide.md)
 
 **nektos/act Compatibility**: ✅ Verified - can run GitHub Actions locally
+
+**Note**: Redis 8.0+ testing requires manual testing until official Docker images become available.
 
 ### ✅ 4. Fixed Critical Logging Issues
 
@@ -139,8 +141,7 @@ if err := replica.Start(ctx); err != nil {
 | 7.0.15        | 9, 10       | ✅ Full        | Basic compatibility, 64-bit integers |
 | 7.2.4         | 10, 11      | ✅ Full        | Extended encodings, functions |
 | 7.4.1         | 11, 12      | ✅ Full        | Stream improvements, list optimizations |
-| 8.0-rc2       | 12, 13      | ✅ Full        | New encodings (encoding 33), compression |
-| 8.2-beta      | 13, 14      | ✅ Planned     | Advanced features, future-proofed |
+| 8.0+          | 12, 13+     | 🔧 Code Ready  | RDB parsing ready, requires manual testing |
 
 ## 🧪 Testing Coverage
 
@@ -170,9 +171,13 @@ docker run -d --name redis-7.2 -p 6379:6379 redis:7.2.4-alpine
 redis-cli XADD "test:stream" "*" field1 value1
 go test -v -run TestRDBParsingRobustness
 
-# Test Redis 8.0 with new encodings
-docker run -d --name redis-8.0 -p 6379:6379 redis:8.0-rc2-alpine
-# Automatically handles new RDB format features
+# Test Redis 7.4 with streams
+docker run -d --name redis-7.4 -p 6379:6379 redis:7.4.1-alpine
+redis-cli XADD "test:stream" "*" field1 value1
+go test -v -run TestRDBParsingRobustness
+
+# Note: Redis 8.0+ testing requires manual setup until Docker images are available
+# RDB parsing code is ready for Redis 8.0+ encodings
 ```
 
 ## 📈 Performance Impact
@@ -240,7 +245,7 @@ scripts/
 
 ```bash
 # Prerequisites
-# - Go 1.24.5+
+# - Go 1.23+
 # - Docker
 # - redis-cli tools
 

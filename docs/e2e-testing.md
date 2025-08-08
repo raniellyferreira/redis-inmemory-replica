@@ -6,7 +6,7 @@ This document describes how to run end-to-end tests that connect to a real Redis
 
 1. **Redis Server**: You need a running Redis instance for testing
 2. **redis-cli**: Command line interface for Redis (usually comes with Redis)
-3. **Go**: Go 1.24.5 or later for running the tests
+3. **Go**: Go 1.23 or later for running the tests
 
 ## Setting up Redis for Testing
 
