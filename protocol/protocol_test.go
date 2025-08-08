@@ -351,6 +351,6 @@ func BenchmarkRESPWriter(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-	_ = writer.Flush()
+		_ = writer.Flush()
 	}
 }

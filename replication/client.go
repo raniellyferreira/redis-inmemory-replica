@@ -570,8 +570,6 @@ func (c *Client) performFullSync() error {
 		return fmt.Errorf("RDB parsing failed: %w", err)
 	}
 
-	c.logger.Debug("RDB parsing completed")
-
 	// Note: Reader cleanup will be handled during connection establishment
 	// for command streaming to ensure proper synchronization
 
@@ -852,7 +850,7 @@ func (h *rdbStorageHandler) OnAux(key, value []byte) error {
 }
 
 func (h *rdbStorageHandler) OnEnd() error {
-	h.logger.Debug("RDB parsing completed")
+	// Don't log here since client already logs completion
 	return nil
 }
 

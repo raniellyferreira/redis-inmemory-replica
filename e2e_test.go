@@ -39,7 +39,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	// Create replica with authentication if needed
 	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
-		redisreplica.WithSyncTimeout(30*time.Second),
+		redisreplica.WithSyncTimeout(30 * time.Second),
 	}
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
@@ -255,7 +255,7 @@ func TestRDBParsingRobustness(t *testing.T) {
 	// Create replica and test full sync with authentication if needed
 	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
-		redisreplica.WithSyncTimeout(30*time.Second),
+		redisreplica.WithSyncTimeout(30 * time.Second),
 	}
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
