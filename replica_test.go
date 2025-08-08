@@ -15,7 +15,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	if replica == nil {
 		t.Fatal("Expected replica to be non-nil")
@@ -57,7 +57,7 @@ func TestReplicaConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Verify storage is accessible
 	storage := replica.Storage()
@@ -88,7 +88,7 @@ func TestReplicaStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Test initial status
 	status := replica.SyncStatus()
@@ -113,7 +113,7 @@ func TestReplicaInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	info := replica.GetInfo()
 	if info == nil {
@@ -143,7 +143,7 @@ func TestSyncCallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	callbackCalled := false
 	replica.OnSyncComplete(func() {
@@ -184,7 +184,7 @@ func TestDatabaseFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica with database filtering: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Test empty database list (should replicate all)
 	replica2, err := redisreplica.New(
@@ -194,7 +194,7 @@ func TestDatabaseFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica with empty database list: %v", err)
 	}
-	defer replica2.Close()
+	defer func() { _ = replica2.Close() }()
 }
 
 // TestDatabaseFilteringInvalid tests invalid database numbers
@@ -227,5 +227,5 @@ func TestReplicaAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica with authentication: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 }

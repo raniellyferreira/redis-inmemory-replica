@@ -352,7 +352,7 @@ func (c *Client) connect() error {
 
 	// Set connection timeouts with enhanced error handling
 	if err := c.setConnectionTimeouts(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("failed to set connection timeouts: %w", err)
 	}
 
@@ -388,7 +388,7 @@ func (c *Client) connect() error {
 func (c *Client) disconnect() {
 	c.mu.Lock()
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 		c.conn = nil
 	}
 	c.connected = false

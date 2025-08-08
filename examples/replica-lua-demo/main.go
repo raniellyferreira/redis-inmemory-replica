@@ -19,10 +19,10 @@ func main() {
 	fmt.Println("\n📊 Demonstrating Lua script execution on replica storage:")
 
 	// Simulate some data in storage
-	stor.Set("user:1:name", []byte("Alice"), nil)
-	stor.Set("user:1:email", []byte("alice@example.com"), nil)
-	stor.Set("user:2:name", []byte("Bob"), nil)
-	stor.Set("user:2:email", []byte("bob@example.com"), nil)
+	_ = stor.Set("user:1:name", []byte("Alice"), nil)
+	_ = stor.Set("user:1:email", []byte("alice@example.com"), nil)
+	_ = stor.Set("user:2:name", []byte("Bob"), nil)
+	_ = stor.Set("user:2:email", []byte("bob@example.com"), nil)
 
 	// Example: Lua script to get user info
 	script := `

@@ -38,7 +38,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 			for _, cfg := range configurations {
 				t.Run(cfg.name, func(t *testing.T) {
 					s := storage.NewMemory()
-					defer s.Close()
+					defer func() { _ = s.Close() }()
 
 					s.SetCleanupConfig(cfg.config)
 
@@ -150,7 +150,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 	for _, cfg := range configs {
 		b.Run(cfg.name, func(b *testing.B) {
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			s.SetCleanupConfig(cfg.config)
 
@@ -208,7 +208,7 @@ func TestRecommendedConfiguration(t *testing.T) {
 	recommendedConfig := storage.CleanupConfigDefault
 
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	s.SetCleanupConfig(recommendedConfig)
 

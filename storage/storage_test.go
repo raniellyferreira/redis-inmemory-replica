@@ -11,7 +11,7 @@ import (
 
 func TestMemoryStorage(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Test Set and Get
 	err := s.Set("key1", []byte("value1"), nil)
@@ -37,7 +37,7 @@ func TestMemoryStorage(t *testing.T) {
 
 func TestMemoryStorageExpiry(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Set key with expiry in the past (should be immediately expired)
 	pastTime := time.Now().Add(-1 * time.Hour)
@@ -72,7 +72,7 @@ func TestMemoryStorageExpiry(t *testing.T) {
 
 func TestMemoryStorageDel(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Set some keys
 	_ = s.Set("key1", []byte("value1"), nil)
@@ -104,7 +104,7 @@ func TestMemoryStorageDel(t *testing.T) {
 
 func TestMemoryStorageExists(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_ = s.Set("key1", []byte("value1"), nil)
 	_ = s.Set("key2", []byte("value2"), nil)
@@ -122,7 +122,7 @@ func TestMemoryStorageExists(t *testing.T) {
 
 func TestMemoryStorageExpire(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_ = s.Set("key1", []byte("value1"), nil)
 
@@ -148,7 +148,7 @@ func TestMemoryStorageExpire(t *testing.T) {
 
 func TestMemoryStorageTTL(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Key without expiry
 	_ = s.Set("key1", []byte("value1"), nil)
@@ -174,7 +174,7 @@ func TestMemoryStorageTTL(t *testing.T) {
 
 func TestMemoryStorageKeys(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Initially no keys
 	keys := s.Keys()
@@ -201,7 +201,7 @@ func TestMemoryStorageKeys(t *testing.T) {
 
 func TestMemoryStorageFlushAll(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Add some keys
 	_ = s.Set("key1", []byte("value1"), nil)
@@ -227,7 +227,7 @@ func TestMemoryStorageFlushAll(t *testing.T) {
 
 func TestMemoryStorageDatabase(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Default database should be 0
 	currentDB := s.CurrentDB()
@@ -278,7 +278,7 @@ func TestMemoryStorageDatabase(t *testing.T) {
 
 func TestMemoryStorageScan(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Add some keys
 	_ = s.Set("user:1", []byte("alice"), nil)
@@ -300,7 +300,7 @@ func TestMemoryStorageScan(t *testing.T) {
 
 func TestMemoryStorageInfo(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_ = s.Set("key1", []byte("value1"), nil)
 
@@ -320,7 +320,7 @@ func TestMemoryStorageInfo(t *testing.T) {
 
 func TestMemoryStorageMemoryLimit(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Set memory limit
 	limit := int64(1024)
@@ -333,7 +333,7 @@ func TestMemoryStorageMemoryLimit(t *testing.T) {
 
 func BenchmarkMemoryStorageGet(b *testing.B) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_ = s.Set("key", []byte("value"), nil)
 
@@ -345,7 +345,7 @@ func BenchmarkMemoryStorageGet(b *testing.B) {
 
 func BenchmarkMemoryStorageSet(b *testing.B) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	value := []byte("value")
 
@@ -358,7 +358,7 @@ func BenchmarkMemoryStorageSet(b *testing.B) {
 // Test cleanup configuration
 func TestMemoryStorageCleanupConfig(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Test default config
 	config := s.GetCleanupConfig()
@@ -387,7 +387,7 @@ func TestMemoryStorageCleanupConfig(t *testing.T) {
 // Test data integrity during cleanup
 func TestMemoryStorageCleanupIntegrity(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Set up test data with mixed expiry times
 	now := time.Now()
@@ -438,7 +438,7 @@ func TestMemoryStorageCleanupIntegrity(t *testing.T) {
 // Test concurrent access during cleanup
 func TestMemoryStorageCleanupConcurrency(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Configure aggressive cleanup for testing
 	s.SetCleanupConfig(storage.CleanupConfig{
@@ -552,7 +552,7 @@ func TestMemoryStorageCleanupLoadScenarios(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			s.SetCleanupConfig(scenario.config)
 

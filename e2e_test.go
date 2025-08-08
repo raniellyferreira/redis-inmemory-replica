@@ -42,7 +42,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Track sync completion
 	syncCompleted := make(chan struct{})
@@ -251,7 +251,7 @@ func TestRDBParsingRobustness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Start and wait for sync
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -319,7 +319,7 @@ func isRedisAvailable(addr string) bool {
 	if err != nil {
 		return false
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Check if authentication is needed
 	password := os.Getenv("REDIS_PASSWORD")
@@ -369,7 +369,7 @@ func clearRedis(addr string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send FLUSHALL command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$8\r\nFLUSHALL\r\n"))
@@ -393,7 +393,7 @@ func setRedisKey(addr, key, value string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send SET command using proper RESP protocol (array of bulk strings)
 	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
@@ -419,7 +419,7 @@ func deleteRedisKey(addr, key string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send DEL command using proper RESP protocol
 	cmd := fmt.Sprintf("*2\r\n$3\r\nDEL\r\n$%d\r\n%s\r\n", len(key), key)
@@ -444,7 +444,7 @@ func forcePersistRedis(addr string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send BGSAVE command using proper RESP protocol
 	_, err = conn.Write([]byte("*1\r\n$6\r\nBGSAVE\r\n"))
@@ -516,7 +516,7 @@ func TestFullSyncAndIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Track sync completion
 	syncCompleted := make(chan struct{})
@@ -688,7 +688,7 @@ func TestRedis7xFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Start and wait for sync
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -768,7 +768,7 @@ func setRedisKeyWithAuth(addr, password, key, value string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Authenticate first
 	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
@@ -808,7 +808,7 @@ func deleteRedisKeyWithAuth(addr, password, key string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Authenticate first
 	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
@@ -847,7 +847,7 @@ func forcePersistRedisWithAuth(addr, password string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Authenticate first
 	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
@@ -885,7 +885,7 @@ func clearRedisWithAuth(addr, password string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Authenticate first
 	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
@@ -937,7 +937,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Start replica
 	ctx := context.Background()

@@ -24,7 +24,7 @@ func TestCleanupPerformanceComparison(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			// Test the new incremental approach
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			// Configure for efficient cleanup
 			s.SetCleanupConfig(storage.CleanupConfig{
@@ -96,7 +96,7 @@ func TestCleanupPerformanceComparison(t *testing.T) {
 // TestCleanupEfficiencyMetrics measures key efficiency metrics
 func TestCleanupEfficiencyMetrics(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Configure for testing
 	configs := []struct {
@@ -197,7 +197,7 @@ func TestCleanupEfficiencyMetrics(t *testing.T) {
 // TestCleanupAdaptiveBehavior tests that cleanup adapts to workload
 func TestCleanupAdaptiveBehavior(t *testing.T) {
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Test different expiry scenarios
 	scenarios := []struct {
