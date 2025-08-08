@@ -447,21 +447,23 @@ func (p *RDBParser) readLZFString() ([]byte, error) {
 		return nil, fmt.Errorf("failed to read LZF uncompressed length: %w", err)
 	}
 
-	// For now, read the compressed data but don't decompress
-	// This maintains compatibility while not implementing full LZF
+	// Read the compressed data
 	compressedData := make([]byte, compressedLen)
 	if _, err := io.ReadFull(p.br, compressedData); err != nil {
 		return nil, fmt.Errorf("failed to read LZF compressed data: %w", err)
 	}
 
-	// For compatibility, if we can't decompress, return a placeholder
-	// Real implementation would decompress using LZF algorithm
-	if p.strategy.requiresStrictParsing {
-		return nil, fmt.Errorf("LZF decompression not implemented - uncompressed length: %d", uncompressedLen)
+	// Decompress using LZF algorithm
+	decompressed, err := lzfDecompress(compressedData, int(uncompressedLen))
+	if err != nil {
+		// If decompression fails and we allow skipping errors, return placeholder
+		if p.canSkipError() {
+			return []byte(fmt.Sprintf("LZF_DECOMPRESSION_FAILED_%d_BYTES", uncompressedLen)), nil
+		}
+		return nil, fmt.Errorf("LZF decompression failed: %w", err)
 	}
 
-	// Return a marker that this was a compressed string
-	return []byte(fmt.Sprintf("LZF_COMPRESSED_%d_BYTES", uncompressedLen)), nil
+	return decompressed, nil
 }
 
 // readValue reads a value based on its type

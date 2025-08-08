@@ -132,13 +132,18 @@ jobs:
       if: always()
       run: |
         echo "Cleaning up Redis container..."
-        docker stop redis-test || true
-        docker rm redis-test || true
-        
-        # Clean up temporary directory
-        if [ -n "${{ steps.tmpdir.outputs.tmpdir }}" ] && [ -d "${{ steps.tmpdir.outputs.tmpdir }}" ]; then
-          rm -rf "${{ steps.tmpdir.outputs.tmpdir }}"
-          echo "Cleaned up temporary directory"
+        # Only cleanup if we're in CI environment to avoid local development issues
+        if [ "${GITHUB_ACTIONS}" = "true" ]; then
+          docker stop redis-test 2>/dev/null || true
+          docker rm redis-test 2>/dev/null || true
+          
+          # Clean up temporary directory
+          if [ -n "${{ steps.tmpdir.outputs.tmpdir }}" ] && [ -d "${{ steps.tmpdir.outputs.tmpdir }}" ]; then
+            rm -rf "${{ steps.tmpdir.outputs.tmpdir }}" 2>/dev/null || true
+            echo "Cleaned up temporary directory"
+          fi
+        else
+          echo "Skipping cleanup in non-CI environment"
         fi
 
   # Test with authentication
@@ -229,13 +234,18 @@ jobs:
       if: always()
       run: |
         echo "Cleaning up Redis auth container..."
-        docker stop redis-auth-test || true
-        docker rm redis-auth-test || true
-        
-        # Clean up temporary directory
-        if [ -n "${{ steps.tmpdir.outputs.tmpdir }}" ] && [ -d "${{ steps.tmpdir.outputs.tmpdir }}" ]; then
-          rm -rf "${{ steps.tmpdir.outputs.tmpdir }}"
-          echo "Cleaned up temporary directory"
+        # Only cleanup if we're in CI environment to avoid local development issues
+        if [ "${GITHUB_ACTIONS}" = "true" ]; then
+          docker stop redis-auth-test 2>/dev/null || true
+          docker rm redis-auth-test 2>/dev/null || true
+          
+          # Clean up temporary directory
+          if [ -n "${{ steps.tmpdir.outputs.tmpdir }}" ] && [ -d "${{ steps.tmpdir.outputs.tmpdir }}" ]; then
+            rm -rf "${{ steps.tmpdir.outputs.tmpdir }}" 2>/dev/null || true
+            echo "Cleaned up temporary directory"
+          fi
+        else
+          echo "Skipping cleanup in non-CI environment"
         fi
 
   # Summary job to check all versions passed
