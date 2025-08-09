@@ -630,35 +630,6 @@ make benchmark
 make lint
 ```
 
-#### Long-Running Integration Tests
-
-The library includes comprehensive integration tests that require a Redis instance:
-
-**Heartbeat Stability Test** (`TestHeartbeatConnectionStability`):
-- Tests heartbeat mechanism for 2 minutes of continuous operation
-- Verifies connection stability and timeout prevention
-- Monitors replication offset consistency and command processing
-
-**Active Replication Test** (`TestReplicationDuringActiveChanges`):
-- Tests replication during 2 minutes of continuous master changes
-- Performs mixed operations: SET, UPDATE, DELETE commands
-- Validates replication accuracy under load
-
-To run these tests with a local Redis instance:
-
-```bash
-# Start Redis locally (if not already running)
-redis-server --port 6379
-
-# Run the integration tests
-REDIS_ADDR=localhost:6379 go test -v -run "TestHeartbeat|TestReplication" ./...
-
-# For Redis with password
-REDIS_ADDR=localhost:6379 REDIS_PASSWORD=yourpassword go test -v -run "TestHeartbeat|TestReplication" ./...
-```
-
-These tests validate the heartbeat mechanism that prevents Redis master timeout disconnections and ensures stable long-running replication.
-
 ## Contributing
 
 1. Fork the repository

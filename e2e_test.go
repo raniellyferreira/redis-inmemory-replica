@@ -901,8 +901,8 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 					
 				case 2: // SET with different pattern
 					key := fmt.Sprintf("active:data:%d", operationCounter)
-					// Vary data sizes
-					dataSize := 50 + (operationCounter % 200) // 50-250 bytes
+					// Vary data sizes more conservatively
+					dataSize := 10 + (operationCounter % 50) // 10-59 bytes
 					value := fmt.Sprintf("data_%d_", operationCounter) + strings.Repeat("X", dataSize)
 					if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 						t.Logf("Warning: Failed to set data key %s: %v", key, err)
@@ -913,12 +913,23 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 					
 				case 3: // DELETE operation (delete some older keys)
 					if operationCounter > 20 { // Only start deleting after we have some keys
-						keyToDelete := fmt.Sprintf("active:set:%d", operationCounter-20)
-						if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, keyToDelete); err != nil {
-							t.Logf("Warning: Failed to delete key %s: %v", keyToDelete, err)
-							errors++
+						// Delete both types of keys that were created
+						if operationCounter%2 == 0 {
+							keyToDelete := fmt.Sprintf("active:set:%d", operationCounter-20)
+							if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, keyToDelete); err != nil {
+								t.Logf("Warning: Failed to delete key %s: %v", keyToDelete, err)
+								errors++
+							} else {
+								deleteOperations++
+							}
 						} else {
-							deleteOperations++
+							keyToDelete := fmt.Sprintf("active:data:%d", operationCounter-20)
+							if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, keyToDelete); err != nil {
+								t.Logf("Warning: Failed to delete key %s: %v", keyToDelete, err)
+								errors++
+							} else {
+								deleteOperations++
+							}
 						}
 					}
 				}

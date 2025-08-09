@@ -1288,7 +1288,6 @@ func (c *Client) sendReplconfACK() error {
 	}
 
 	// Temporarily set a shorter write timeout for heartbeat
-	originalDeadline := time.Time{}
 	if heartbeatWriteTimeout != writeTimeout {
 		if err := conn.SetWriteDeadline(time.Now().Add(heartbeatWriteTimeout)); err != nil {
 			c.logger.Debug("Failed to set heartbeat write timeout", "error", err)
@@ -1299,7 +1298,8 @@ func (c *Client) sendReplconfACK() error {
 			if writeTimeout > 0 {
 				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			} else {
-				_ = conn.SetWriteDeadline(originalDeadline)
+				// Reset to no deadline if original writeTimeout was 0
+				_ = conn.SetWriteDeadline(time.Time{})
 			}
 		}()
 	}
