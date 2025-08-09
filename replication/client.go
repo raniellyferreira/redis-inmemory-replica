@@ -286,6 +286,12 @@ func (c *Client) SetDatabases(databases []int) {
 func (c *Client) SetHeartbeatInterval(interval time.Duration) {
 	if interval > 0 {
 		c.heartbeatInterval = interval
+	} else if interval == 0 {
+		// interval == 0 means use default (45s)
+		c.heartbeatInterval = 45 * time.Second
+	} else {
+		// interval < 0 means disable heartbeat
+		c.heartbeatInterval = -1
 	}
 }
 
@@ -1260,13 +1266,42 @@ func (c *Client) stopHeartbeat() {
 // sendReplconfACK sends a REPLCONF ACK command with current replication offset
 func (c *Client) sendReplconfACK() error {
 	c.mu.RLock()
+	conn := c.conn
 	writer := c.writer
 	offset := c.replOffset
 	connected := c.connected
+	writeTimeout := c.writeTimeout
 	c.mu.RUnlock()
 
-	if !connected || writer == nil {
+	if !connected || writer == nil || conn == nil {
 		return fmt.Errorf("not connected")
+	}
+
+	// Set a shorter write timeout for heartbeat to avoid blocking
+	// Use half the heartbeat interval or the configured write timeout, whichever is smaller
+	heartbeatWriteTimeout := writeTimeout
+	if heartbeatWriteTimeout > c.heartbeatInterval/2 {
+		heartbeatWriteTimeout = c.heartbeatInterval / 2
+	}
+	if heartbeatWriteTimeout < 1*time.Second {
+		heartbeatWriteTimeout = 1 * time.Second // Minimum 1 second
+	}
+
+	// Temporarily set a shorter write timeout for heartbeat
+	originalDeadline := time.Time{}
+	if heartbeatWriteTimeout != writeTimeout {
+		if err := conn.SetWriteDeadline(time.Now().Add(heartbeatWriteTimeout)); err != nil {
+			c.logger.Debug("Failed to set heartbeat write timeout", "error", err)
+			// Continue with default timeout
+		}
+		// Restore original timeout after heartbeat
+		defer func() {
+			if writeTimeout > 0 {
+				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			} else {
+				_ = conn.SetWriteDeadline(originalDeadline)
+			}
+		}()
 	}
 
 	// Send REPLCONF ACK with current offset
