@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/raniellyferreira/redis-inmemory-replica/replication"
+	"github.com/raniellyferreira/redis-inmemory-replica/server"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
@@ -29,6 +30,7 @@ type Replica struct {
 	// Components
 	storage storage.Storage
 	syncMgr *replication.SyncManager
+	server  *server.Server
 
 	// State
 	mu      sync.RWMutex
@@ -107,6 +109,16 @@ func New(opts ...Option) (*Replica, error) {
 		},
 	}
 
+	// Create server if replica address is provided
+	if cfg.replicaAddr != "" {
+		replica.server = server.NewServer(cfg.replicaAddr, stor)
+		if cfg.replicaPassword != "" {
+			replica.server.SetPassword(cfg.replicaPassword)
+		}
+		// Set server to track sync status for LOADING state
+		replica.server.SetSyncManager(syncMgr)
+	}
+
 	// Register sync completion callback
 	syncMgr.OnSyncComplete(func() {
 		replica.mu.RLock()
@@ -146,17 +158,22 @@ func (r *Replica) Start(ctx context.Context) error {
 		return nil // Already started
 	}
 
-	// Start replication
-	if err := r.syncMgr.Start(ctx); err != nil {
-		return err
-	}
+	// Start replication in background (don't block server startup)
+	go func() {
+		if err := r.syncMgr.Start(context.Background()); err != nil {
+			r.config.logger.Error("Failed to start replication", Field{Key: "error", Value: err})
+		}
+	}()
 
 	r.started = true
 
-	// TODO: Start server if enabled
-	if r.config.enableServer {
-		// Server implementation would go here - currently not implemented
-		r.config.logger.Debug("Server mode is enabled but not yet implemented")
+	// Start server if replica address is configured
+	if r.server != nil {
+		if err := r.server.Start(); err != nil {
+			r.config.logger.Error("Failed to start server", Field{Key: "error", Value: err}, Field{Key: "addr", Value: r.config.replicaAddr})
+			return err
+		}
+		r.config.logger.Info("Replica server listening", Field{Key: "addr", Value: r.server.Addr()})
 	}
 
 	return nil
@@ -228,6 +245,13 @@ func (r *Replica) Close() error {
 	}
 
 	r.closed = true
+
+	// Stop server first
+	if r.server != nil {
+		if err := r.server.Stop(); err != nil {
+			r.config.logger.Error("Error stopping server", Field{Key: "error", Value: err})
+		}
+	}
 
 	// Stop replication
 	if r.started {

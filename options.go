@@ -33,7 +33,6 @@ type config struct {
 
 	// Behavioral options
 	readOnly       bool
-	enableServer   bool
 	commandFilters []string
 }
 
@@ -41,7 +40,7 @@ type config struct {
 func defaultConfig() *config {
 	return &config{
 		masterAddr:        "localhost:6379",
-		replicaAddr:       ":6380",
+		replicaAddr:       "",    // No default replica address
 		databases:         []int{}, // empty = replicate all databases
 		syncTimeout:       30 * time.Second,
 		connectTimeout:    5 * time.Second,
@@ -50,7 +49,6 @@ func defaultConfig() *config {
 		heartbeatInterval: 30 * time.Second, // Send REPLCONF ACK every 30 seconds
 		maxMemory:         0,                 // unlimited
 		readOnly:          true,
-		enableServer:      true,
 		logger:            &defaultLogger{},
 		commandFilters:    []string{},
 	}
@@ -416,17 +414,7 @@ func WithReadOnly(readOnly bool) Option {
 	}
 }
 
-// WithServerEnabled controls whether to start the Redis-compatible server
-//
-// Example:
-//
-//	WithServerEnabled(false) // Disable server, use only as library
-func WithServerEnabled(enabled bool) Option {
-	return func(c *config) error {
-		c.enableServer = enabled
-		return nil
-	}
-}
+
 
 // WithCommandFilters sets which commands to replicate
 // Empty slice means replicate all commands

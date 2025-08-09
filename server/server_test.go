@@ -140,14 +140,17 @@ func TestServer_BasicCommands(t *testing.T) {
 		t.Errorf("expected PONG, got %s", resp)
 	}
 
-	// Test SET/GET
+	// Test SET should return READONLY error
 	resp, err = client.sendCommand("SET", "testkey", "testvalue")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp != "OK" {
-		t.Errorf("expected OK, got %s", resp)
+	if !strings.Contains(resp, "READONLY") {
+		t.Errorf("expected READONLY error, got %s", resp)
 	}
+
+	// Since we can't write, let's manually set data in storage for GET test
+	_ = stor.Set("testkey", []byte("testvalue"), nil)
 
 	resp, err = client.sendCommand("GET", "testkey")
 	if err != nil {

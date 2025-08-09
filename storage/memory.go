@@ -224,6 +224,28 @@ func (s *MemoryStorage) TTL(key string) time.Duration {
 	return time.Until(*value.Expiry)
 }
 
+// PTTL returns the time to live for a key in milliseconds
+func (s *MemoryStorage) PTTL(key string) time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	db := s.databases[s.currentDB]
+	value, exists := db.data[key]
+	if !exists {
+		return -2 * time.Millisecond // Key doesn't exist
+	}
+
+	if value.IsExpired() {
+		return -2 * time.Millisecond // Key expired
+	}
+
+	if value.Expiry == nil {
+		return -1 * time.Millisecond // No expiration
+	}
+
+	return time.Until(*value.Expiry)
+}
+
 // Keys returns all keys in the current database
 func (s *MemoryStorage) Keys() []string {
 	s.mu.RLock()

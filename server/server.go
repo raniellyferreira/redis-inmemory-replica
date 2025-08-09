@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,13 +13,15 @@ import (
 
 	"github.com/raniellyferreira/redis-inmemory-replica/lua"
 	"github.com/raniellyferreira/redis-inmemory-replica/protocol"
+	"github.com/raniellyferreira/redis-inmemory-replica/replication"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
 // Server provides Redis protocol server functionality
 type Server struct {
-	storage storage.Storage
-	lua     *lua.Engine
+	storage   storage.Storage
+	lua       *lua.Engine
+	syncMgr   *replication.SyncManager
 
 	// Server configuration
 	addr     string
@@ -73,6 +76,11 @@ func NewServer(addr string, storage storage.Storage) *Server {
 // SetPassword sets the authentication password for the server
 func (s *Server) SetPassword(password string) {
 	s.password = password
+}
+
+// SetSyncManager sets the sync manager for tracking sync status
+func (s *Server) SetSyncManager(syncMgr *replication.SyncManager) {
+	s.syncMgr = syncMgr
 }
 
 // Start starts the Redis server
@@ -249,14 +257,34 @@ func (c *Client) executeCommand(cmd *protocol.Command) {
 		c.handleSelect(cmd)
 	case "GET":
 		c.handleGet(cmd)
+	case "MGET":
+		c.handleMGet(cmd)
 	case "SET":
 		c.handleSet(cmd)
 	case "DEL":
 		c.handleDel(cmd)
 	case "EXISTS":
 		c.handleExists(cmd)
+	case "TTL":
+		c.handleTTL(cmd)
+	case "PTTL":
+		c.handlePTTL(cmd)
 	case "TYPE":
 		c.handleType(cmd)
+	case "KEYS":
+		c.handleKeys(cmd)
+	case "SCAN":
+		c.handleScan(cmd)
+	case "DBSIZE":
+		c.handleDBSize(cmd)
+	case "INFO":
+		c.handleInfo(cmd)
+	case "ROLE":
+		c.handleRole(cmd)
+	case "COMMAND":
+		c.handleCommand(cmd)
+	case "READONLY":
+		c.handleReadOnly(cmd)
 	case "EVAL":
 		c.handleEval(cmd)
 	case "EVALSHA":
@@ -329,6 +357,12 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 		return
 	}
 
+	// Check if initial sync is completed
+	if c.server.syncMgr != nil && !c.server.syncMgr.IsInitialSyncCompleted() {
+		c.writeError("LOADING Redis is loading the dataset in memory")
+		return
+	}
+
 	value, exists := c.server.storage.Get(string(cmd.Args[0]))
 	if !exists {
 		c.writeNull()
@@ -338,38 +372,11 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 }
 
 func (c *Client) handleSet(cmd *protocol.Command) {
-	if len(cmd.Args) < 2 {
-		c.writeError("ERR wrong number of arguments for 'set' command")
-		return
-	}
-
-	key := string(cmd.Args[0])
-	value := cmd.Args[1]
-
-	// TODO: Handle SET options (EX, PX, NX, XX, etc.)
-
-	err := c.server.storage.Set(key, value, nil)
-	if err != nil {
-		c.writeError(fmt.Sprintf("ERR %v", err))
-		return
-	}
-
-	c.writeString("OK")
+	c.writeError("READONLY You can't write against a read only replica")
 }
 
 func (c *Client) handleDel(cmd *protocol.Command) {
-	if len(cmd.Args) == 0 {
-		c.writeError("ERR wrong number of arguments for 'del' command")
-		return
-	}
-
-	keys := make([]string, len(cmd.Args))
-	for i, arg := range cmd.Args {
-		keys[i] = string(arg)
-	}
-
-	deleted := c.server.storage.Del(keys...)
-	c.writeInteger(deleted)
+	c.writeError("READONLY You can't write against a read only replica")
 }
 
 func (c *Client) handleExists(cmd *protocol.Command) {
@@ -520,6 +527,277 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 	default:
 		c.writeError(fmt.Sprintf("ERR unknown SCRIPT subcommand '%s'", subCmd))
 	}
+}
+
+func (c *Client) handleMGet(cmd *protocol.Command) {
+	if len(cmd.Args) == 0 {
+		c.writeError("ERR wrong number of arguments for 'mget' command")
+		return
+	}
+
+	// Check if initial sync is completed
+	if c.server.syncMgr != nil && !c.server.syncMgr.IsInitialSyncCompleted() {
+		c.writeError("LOADING Redis is loading the dataset in memory")
+		return
+	}
+
+	values := make([]interface{}, len(cmd.Args))
+	for i, arg := range cmd.Args {
+		value, exists := c.server.storage.Get(string(arg))
+		if exists {
+			values[i] = string(value)
+		} else {
+			values[i] = nil
+		}
+	}
+	c.writeArray(values)
+}
+
+func (c *Client) handleTTL(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'ttl' command")
+		return
+	}
+
+	ttl := c.server.storage.TTL(string(cmd.Args[0]))
+	// Convert to seconds as Redis expects
+	seconds := int64(ttl.Seconds())
+	c.writeInteger(seconds)
+}
+
+func (c *Client) handlePTTL(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'pttl' command")
+		return
+	}
+
+	ttl := c.server.storage.PTTL(string(cmd.Args[0]))
+	// Convert to milliseconds as Redis expects
+	milliseconds := int64(ttl / time.Millisecond)
+	c.writeInteger(milliseconds)
+}
+
+func (c *Client) handleKeys(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'keys' command")
+		return
+	}
+
+	pattern := string(cmd.Args[0])
+	allKeys := c.server.storage.Keys()
+	
+	var matchingKeys []interface{}
+	for _, key := range allKeys {
+		matched, err := filepath.Match(pattern, key)
+		if err == nil && matched {
+			matchingKeys = append(matchingKeys, key)
+		}
+	}
+	
+	c.writeArray(matchingKeys)
+}
+
+func (c *Client) handleScan(cmd *protocol.Command) {
+	if len(cmd.Args) < 1 {
+		c.writeError("ERR wrong number of arguments for 'scan' command")
+		return
+	}
+
+	cursor, err := strconv.ParseInt(string(cmd.Args[0]), 10, 64)
+	if err != nil {
+		c.writeError("ERR invalid cursor")
+		return
+	}
+
+	var pattern string
+	var count int64 = 10 // default count
+
+	// Parse optional arguments
+	for i := 1; i < len(cmd.Args); i++ {
+		arg := strings.ToUpper(string(cmd.Args[i]))
+		switch arg {
+		case "MATCH":
+			if i+1 >= len(cmd.Args) {
+				c.writeError("ERR syntax error")
+				return
+			}
+			pattern = string(cmd.Args[i+1])
+			i++
+		case "COUNT":
+			if i+1 >= len(cmd.Args) {
+				c.writeError("ERR syntax error")
+				return
+			}
+			count, err = strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil || count <= 0 {
+				c.writeError("ERR invalid count")
+				return
+			}
+			i++
+		}
+	}
+
+	newCursor, keys := c.server.storage.Scan(cursor, pattern, count)
+	
+	// Convert keys to interface slice
+	keyInterfaces := make([]interface{}, len(keys))
+	for i, key := range keys {
+		keyInterfaces[i] = key
+	}
+	
+	result := []interface{}{
+		strconv.FormatInt(newCursor, 10),
+		keyInterfaces,
+	}
+	c.writeArray(result)
+}
+
+func (c *Client) handleDBSize(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'dbsize' command")
+		return
+	}
+
+	size := c.server.storage.KeyCount()
+	c.writeInteger(size)
+}
+
+func (c *Client) handleInfo(cmd *protocol.Command) {
+	sections := []string{"all"}
+	if len(cmd.Args) > 0 {
+		sections = make([]string, len(cmd.Args))
+		for i, arg := range cmd.Args {
+			sections[i] = strings.ToLower(string(arg))
+		}
+	}
+
+	var info strings.Builder
+	
+	for _, section := range sections {
+		switch section {
+		case "all", "server":
+			info.WriteString("# Server\r\n")
+			info.WriteString("redis_version:7.0.0\r\n")
+			info.WriteString("redis_mode:replica\r\n")
+			info.WriteString("arch_bits:64\r\n")
+			info.WriteString("os:Linux\r\n")
+			info.WriteString("\r\n")
+		}
+		
+		if section == "all" || section == "replication" {
+			info.WriteString("# Replication\r\n")
+			info.WriteString("role:slave\r\n")
+			
+			if c.server.syncMgr != nil {
+				status := c.server.syncMgr.SyncStatus()
+				info.WriteString(fmt.Sprintf("master_host:%s\r\n", status.MasterHost))
+				
+				if status.Connected {
+					info.WriteString("master_link_status:up\r\n")
+				} else {
+					info.WriteString("master_link_status:down\r\n")
+				}
+				
+				// Calculate seconds since last sync
+				lastIO := int64(time.Since(status.LastSyncTime).Seconds())
+				info.WriteString(fmt.Sprintf("master_last_io_seconds_ago:%d\r\n", lastIO))
+				
+				if status.InitialSyncCompleted {
+					info.WriteString("master_sync_in_progress:0\r\n")
+				} else {
+					info.WriteString("master_sync_in_progress:1\r\n")
+				}
+				
+				info.WriteString(fmt.Sprintf("master_repl_offset:%d\r\n", status.ReplicationOffset))
+			} else {
+				info.WriteString("master_host:unknown\r\n")
+				info.WriteString("master_link_status:down\r\n")
+				info.WriteString("master_last_io_seconds_ago:-1\r\n")
+				info.WriteString("master_sync_in_progress:0\r\n")
+				info.WriteString("master_repl_offset:0\r\n")
+			}
+			info.WriteString("\r\n")
+		}
+		
+		if section == "all" || section == "memory" {
+			info.WriteString("# Memory\r\n")
+			memoryUsage := c.server.storage.MemoryUsage()
+			info.WriteString(fmt.Sprintf("used_memory:%d\r\n", memoryUsage))
+			info.WriteString(fmt.Sprintf("used_memory_human:%s\r\n", formatBytes(memoryUsage)))
+			info.WriteString("\r\n")
+		}
+	}
+
+	c.writeBulkString([]byte(strings.TrimSpace(info.String())))
+}
+
+func (c *Client) handleRole(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'role' command")
+		return
+	}
+
+	role := []interface{}{"slave"}
+	
+	if c.server.syncMgr != nil {
+		status := c.server.syncMgr.SyncStatus()
+		// Parse master host and port
+		parts := strings.Split(status.MasterHost, ":")
+		if len(parts) == 2 {
+			role = append(role, parts[0]) // host
+			if port, err := strconv.Atoi(parts[1]); err == nil {
+				role = append(role, int64(port)) // port
+			} else {
+				role = append(role, int64(6379)) // default port
+			}
+		} else {
+			role = append(role, status.MasterHost, int64(6379))
+		}
+		role = append(role, status.ReplicationOffset)
+	} else {
+		role = append(role, "unknown", int64(6379), int64(0))
+	}
+	
+	c.writeArray(role)
+}
+
+func (c *Client) handleCommand(cmd *protocol.Command) {
+	if len(cmd.Args) == 0 {
+		// Return number of commands supported
+		c.writeInteger(20) // Approximate count of supported commands
+		return
+	}
+
+	subCmd := strings.ToUpper(string(cmd.Args[0]))
+	switch subCmd {
+	case "DOCS":
+		// Simple stub - return empty array
+		c.writeArray([]interface{}{})
+	default:
+		c.writeError("ERR unknown COMMAND subcommand")
+	}
+}
+
+func (c *Client) handleReadOnly(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'readonly' command")
+		return
+	}
+	c.writeString("OK")
+}
+
+// Helper function to format bytes in human readable format
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // Response writers
