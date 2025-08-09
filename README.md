@@ -36,13 +36,14 @@ import (
     "time"
 
     "github.com/raniellyferreira/redis-inmemory-replica"
+    "github.com/redis/go-redis/v9"
 )
 
 func main() {
-    // Create replica
+    // Create replica with server auto-start
     replica, err := redisreplica.New(
         redisreplica.WithMaster("localhost:6379"),
-        redisreplica.WithReplicaAddr(":6380"),
+        redisreplica.WithReplicaAddr(":6380"), // Server starts automatically
     )
     if err != nil {
         log.Fatal(err)
@@ -64,11 +65,186 @@ func main() {
     status := replica.SyncStatus()
     log.Printf("Sync completed: %v", status.InitialSyncCompleted)
 
-    // Access data
-    storage := replica.Storage()
-    if value, exists := storage.Get("mykey"); exists {
-        log.Printf("Value: %s", value)
+    // Connect Redis client to replica server
+    client := redis.NewClient(&redis.Options{
+        Addr: "localhost:6380",
+    })
+    defer client.Close()
+
+    // Use Redis commands on replica
+    pong, err := client.Ping(ctx).Result()
+    if err != nil {
+        log.Fatal(err)
     }
+    log.Printf("Ping: %s", pong)
+
+    // Read operations work
+    val, err := client.Get(ctx, "mykey").Result()
+    if err == redis.Nil {
+        log.Println("Key does not exist")
+    } else if err != nil {
+        log.Fatal(err)
+    } else {
+        log.Printf("Value: %s", val)
+    }
+
+    // Write operations return READONLY error
+    err = client.Set(ctx, "newkey", "value", 0).Err()
+    if err != nil {
+        log.Printf("Write error (expected): %v", err)
+    }
+}
+```
+
+## Redis Server Integration
+
+The library includes a production-ready Redis server that automatically starts when you provide a replica address. The server is fully compatible with Redis clients and supports read operations and auxiliary commands.
+
+### Automatic Server Startup
+
+```go
+// Server starts automatically when replica address is provided
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("redis.example.com:6379"),
+    redisreplica.WithReplicaAddr(":6380"), // Server auto-starts
+)
+
+// No server when replica address is not provided
+replicaLibraryOnly, err := redisreplica.New(
+    redisreplica.WithMaster("redis.example.com:6379"),
+    // No WithReplicaAddr() = no server
+)
+```
+
+### Supported Redis Commands
+
+The server implements a comprehensive set of Redis commands optimized for read-only replica operations:
+
+#### Data Access Commands
+- `GET key` - Retrieve value (returns LOADING before sync completion)
+- `MGET key1 key2 ...` - Retrieve multiple values
+- `EXISTS key [key...]` - Check key existence
+- `TTL key` - Get time to live in seconds
+- `PTTL key` - Get time to live in milliseconds
+- `TYPE key` - Get value type
+
+#### Key Iteration Commands
+- `KEYS pattern` - Find keys matching pattern (use with caution)
+- `SCAN cursor [MATCH pattern] [COUNT count]` - Iterate keys efficiently
+- `DBSIZE` - Get total number of keys
+
+#### Server Information Commands
+- `INFO [section...]` - Get server information (server, replication, memory)
+- `ROLE` - Get replication role information
+- `PING [message]` - Test connectivity
+- `COMMAND` - Get command information
+
+#### Administrative Commands
+- `SELECT db` - Switch database
+- `READONLY` - Acknowledge read-only mode
+- `QUIT` - Close connection
+
+#### Lua Scripting Commands
+- `EVAL script numkeys key1 ... arg1 ...` - Execute Lua script
+- `EVALSHA sha1 numkeys key1 ... arg1 ...` - Execute cached script
+- `SCRIPT LOAD script` - Cache script
+- `SCRIPT EXISTS sha1 [sha1 ...]` - Check script existence
+- `SCRIPT FLUSH` - Clear script cache
+
+### Read-Only Behavior
+
+Write operations return appropriate Redis-compatible errors:
+
+```go
+client := redis.NewClient(&redis.Options{Addr: ":6380"})
+
+// This will return: "READONLY You can't write against a read only replica"
+err := client.Set(ctx, "key", "value", 0).Err()
+// err.Error() contains "READONLY"
+
+err = client.Del(ctx, "key").Err()
+// err.Error() contains "READONLY"
+```
+
+### Loading State
+
+Before initial synchronization completes, read operations return LOADING errors:
+
+```go
+// Before sync completion
+val, err := client.Get(ctx, "key").Result()
+// err.Error() contains "LOADING Redis is loading the dataset in memory"
+```
+
+### Example: Full Integration
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/raniellyferreira/redis-inmemory-replica"
+    "github.com/redis/go-redis/v9"
+)
+
+func main() {
+    // Create replica with Redis server
+    replica, err := redisreplica.New(
+        redisreplica.WithMaster("localhost:6379"),
+        redisreplica.WithReplicaAddr(":6380"),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer replica.Close()
+
+    // Start replication and server
+    ctx := context.Background()
+    if err := replica.Start(ctx); err != nil {
+        log.Fatal(err)
+    }
+
+    // Connect Redis client
+    client := redis.NewClient(&redis.Options{
+        Addr: "localhost:6380",
+    })
+    defer client.Close()
+
+    // Test connectivity
+    pong, err := client.Ping(ctx).Result()
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("Connected: %s", pong)
+
+    // Wait for sync to complete
+    if err := replica.WaitForSync(ctx); err != nil {
+        log.Fatal(err)
+    }
+
+    // Now read operations work normally
+    keys, err := client.Keys(ctx, "*").Result()
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("Keys: %v", keys)
+
+    // Get replication information
+    info, err := client.Info(ctx, "replication").Result()
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("Replication info:\n%s", info)
+
+    // Get role information
+    role, err := client.Do(ctx, "ROLE").Result()
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("Role: %v", role)
 }
 ```
 
