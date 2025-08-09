@@ -220,7 +220,7 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		writeTimeout:      10 * time.Second,
 		commandFilters:    make(map[string]struct{}),
 		databases:         make(map[int]struct{}), // empty = replicate all
-		heartbeatInterval: 30 * time.Second,       // Send REPLCONF ACK every 30 seconds
+		heartbeatInterval: 45 * time.Second,       // Send REPLCONF ACK every 45 seconds
 		logger:            &defaultLogger{},
 	}
 }
