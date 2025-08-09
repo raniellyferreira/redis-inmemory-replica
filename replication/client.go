@@ -61,6 +61,11 @@ type Client struct {
 	writeTimeout   time.Duration
 	commandFilters map[string]struct{}
 	databases      map[int]struct{} // Which databases to replicate (empty = all)
+	heartbeatInterval time.Duration   // How often to send REPLCONF ACK during streaming
+
+	// Heartbeat state
+	heartbeatStop chan struct{}
+	heartbeatDone chan struct{}
 }
 
 // ReplicationStats tracks replication statistics
@@ -202,20 +207,21 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Client{
-		masterAddr:     masterAddr,
-		storage:        stor,
-		ctx:            ctx,
-		cancel:         cancel,
-		stopChan:       make(chan struct{}),
-		doneChan:       make(chan struct{}),
-		stats:          &ReplicationStats{MasterAddr: masterAddr},
-		syncTimeout:    30 * time.Second,
-		connectTimeout: 5 * time.Second,
-		readTimeout:    30 * time.Second,
-		writeTimeout:   10 * time.Second,
-		commandFilters: make(map[string]struct{}),
-		databases:      make(map[int]struct{}), // empty = replicate all
-		logger:         &defaultLogger{},
+		masterAddr:        masterAddr,
+		storage:           stor,
+		ctx:               ctx,
+		cancel:            cancel,
+		stopChan:          make(chan struct{}),
+		doneChan:          make(chan struct{}),
+		stats:             &ReplicationStats{MasterAddr: masterAddr},
+		syncTimeout:       30 * time.Second,
+		connectTimeout:    5 * time.Second,
+		readTimeout:       30 * time.Second,
+		writeTimeout:      10 * time.Second,
+		commandFilters:    make(map[string]struct{}),
+		databases:         make(map[int]struct{}), // empty = replicate all
+		heartbeatInterval: 30 * time.Second,       // Send REPLCONF ACK every 30 seconds
+		logger:            &defaultLogger{},
 	}
 }
 
@@ -273,6 +279,13 @@ func (c *Client) SetDatabases(databases []int) {
 	c.databases = make(map[int]struct{})
 	for _, db := range databases {
 		c.databases[db] = struct{}{}
+	}
+}
+
+// SetHeartbeatInterval sets the interval for sending REPLCONF ACK during streaming
+func (c *Client) SetHeartbeatInterval(interval time.Duration) {
+	if interval > 0 {
+		c.heartbeatInterval = interval
 	}
 }
 
@@ -753,6 +766,10 @@ func (c *Client) streamCommands() error {
 	// Add a brief stabilization delay after reader reset
 	time.Sleep(50 * time.Millisecond)
 
+	// Start heartbeat goroutine to send periodic REPLCONF ACK
+	c.startHeartbeat()
+	defer c.stopHeartbeat()
+
 	protocolErrorCount := 0
 	maxProtocolErrors := 3 // Reduced threshold for faster reconnection
 	consecutiveSuccesses := 0
@@ -1194,5 +1211,73 @@ func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 		c.logger.Debug("Set write timeout", "timeout", c.writeTimeout)
 	}
 
+	return nil
+}
+
+// startHeartbeat starts the heartbeat goroutine to send periodic REPLCONF ACK
+func (c *Client) startHeartbeat() {
+	if c.heartbeatInterval <= 0 {
+		c.logger.Debug("Heartbeat disabled (interval <= 0)")
+		return
+	}
+
+	c.heartbeatStop = make(chan struct{})
+	c.heartbeatDone = make(chan struct{})
+
+	go func() {
+		defer close(c.heartbeatDone)
+
+		ticker := time.NewTicker(c.heartbeatInterval)
+		defer ticker.Stop()
+
+		c.logger.Debug("Started replication heartbeat", "interval", c.heartbeatInterval)
+
+		for {
+			select {
+			case <-c.heartbeatStop:
+				c.logger.Debug("Heartbeat stopped")
+				return
+			case <-ticker.C:
+				if err := c.sendReplconfACK(); err != nil {
+					c.logger.Debug("Heartbeat ACK failed", "error", err)
+					// Don't return here - let the main streaming loop handle connection errors
+					// The heartbeat failure will be detected when the connection is used next
+				}
+			}
+		}
+	}()
+}
+
+// stopHeartbeat stops the heartbeat goroutine
+func (c *Client) stopHeartbeat() {
+	if c.heartbeatStop != nil {
+		close(c.heartbeatStop)
+		// Wait for heartbeat goroutine to finish
+		<-c.heartbeatDone
+	}
+}
+
+// sendReplconfACK sends a REPLCONF ACK command with current replication offset
+func (c *Client) sendReplconfACK() error {
+	c.mu.RLock()
+	writer := c.writer
+	offset := c.replOffset
+	connected := c.connected
+	c.mu.RUnlock()
+
+	if !connected || writer == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	// Send REPLCONF ACK with current offset
+	if err := writer.WriteCommand("REPLCONF", "ACK", fmt.Sprintf("%d", offset)); err != nil {
+		return fmt.Errorf("failed to write REPLCONF ACK: %w", err)
+	}
+
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("failed to flush REPLCONF ACK: %w", err)
+	}
+
+	c.logger.Debug("Sent REPLCONF ACK", "offset", offset)
 	return nil
 }

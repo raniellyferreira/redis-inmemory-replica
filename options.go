@@ -20,11 +20,12 @@ type config struct {
 	databases []int // Which databases to replicate (empty = all)
 
 	// Timeouts and limits
-	syncTimeout    time.Duration
-	connectTimeout time.Duration
-	readTimeout    time.Duration
-	writeTimeout   time.Duration
-	maxMemory      int64
+	syncTimeout       time.Duration
+	connectTimeout    time.Duration
+	readTimeout       time.Duration
+	writeTimeout      time.Duration
+	heartbeatInterval time.Duration
+	maxMemory         int64
 
 	// Observability
 	logger  Logger
@@ -39,18 +40,19 @@ type config struct {
 // defaultConfig returns a configuration with sensible defaults
 func defaultConfig() *config {
 	return &config{
-		masterAddr:     "localhost:6379",
-		replicaAddr:    ":6380",
-		databases:      []int{}, // empty = replicate all databases
-		syncTimeout:    30 * time.Second,
-		connectTimeout: 5 * time.Second,
-		readTimeout:    30 * time.Second,
-		writeTimeout:   10 * time.Second,
-		maxMemory:      0, // unlimited
-		readOnly:       true,
-		enableServer:   true,
-		logger:         &defaultLogger{},
-		commandFilters: []string{},
+		masterAddr:        "localhost:6379",
+		replicaAddr:       ":6380",
+		databases:         []int{}, // empty = replicate all databases
+		syncTimeout:       30 * time.Second,
+		connectTimeout:    5 * time.Second,
+		readTimeout:       30 * time.Second,
+		writeTimeout:      10 * time.Second,
+		heartbeatInterval: 30 * time.Second, // Send REPLCONF ACK every 30 seconds
+		maxMemory:         0,                 // unlimited
+		readOnly:          true,
+		enableServer:      true,
+		logger:            &defaultLogger{},
+		commandFilters:    []string{},
 	}
 }
 
@@ -157,6 +159,20 @@ func WithWriteTimeout(timeout time.Duration) Option {
 			return ErrInvalidConfig
 		}
 		c.writeTimeout = timeout
+		return nil
+	}
+}
+
+// WithHeartbeatInterval sets the interval for sending REPLCONF ACK during streaming
+// This prevents Redis master from timing out the replica during idle periods
+// Set to 0 to use default (30s), or negative value to disable heartbeat
+//
+// Example:
+//
+//	WithHeartbeatInterval(30 * time.Second)
+func WithHeartbeatInterval(interval time.Duration) Option {
+	return func(c *config) error {
+		c.heartbeatInterval = interval
 		return nil
 	}
 }
