@@ -147,12 +147,13 @@ func (stats *RDBLoadStats) RecordKey(db int, keyType string, logger Logger) {
 	dbStats.TypeCounts[keyType]++
 
 	// Check if we should log progress
+	now := time.Now()
 	shouldLog := stats.ProcessedKeys%int64(stats.BatchSize) == 0 || 
-				time.Since(stats.LastLogTime) >= stats.LogInterval
+				now.Sub(stats.LastLogTime) >= stats.LogInterval
 
 	if shouldLog {
+		stats.LastLogTime = now
 		stats.logProgress(logger)
-		stats.LastLogTime = time.Now()
 	}
 }
 
@@ -1051,19 +1052,21 @@ func (h *rdbStorageHandler) OnEnd() error {
 
 // rdbChunkAggregator tracks RDB chunk statistics for aggregated logging
 type rdbChunkAggregator struct {
-	chunkCount int
-	totalSize  int
-	startTime  time.Time
-	logger     Logger
-	logThreshold int // Log every N chunks
+	chunkCount    int
+	totalSize     int
+	startTime     time.Time
+	logger        Logger
+	logThreshold  int // Log every N chunks
+	sizeThreshold int // Log when size reaches this threshold
 }
 
 // newRDBChunkAggregator creates a new chunk aggregator
 func newRDBChunkAggregator(logger Logger) *rdbChunkAggregator {
 	return &rdbChunkAggregator{
-		startTime:    time.Now(),
-		logger:       logger,
-		logThreshold: 10, // Log every 10 chunks by default
+		startTime:     time.Now(),
+		logger:        logger,
+		logThreshold:  10,    // Log every 10 chunks by default
+		sizeThreshold: 50000, // Log every 50KB by default
 	}
 }
 
@@ -1073,7 +1076,7 @@ func (agg *rdbChunkAggregator) addChunk(size int) {
 	agg.totalSize += size
 	
 	// Log every N chunks or if we've received a significant amount of data
-	if agg.chunkCount%agg.logThreshold == 0 || agg.totalSize%50000 == 0 {
+	if agg.chunkCount%agg.logThreshold == 0 || agg.totalSize%agg.sizeThreshold == 0 {
 		elapsed := time.Since(agg.startTime)
 		rate := float64(agg.totalSize) / elapsed.Seconds()
 		agg.logger.Debug("RDB chunk progress", 

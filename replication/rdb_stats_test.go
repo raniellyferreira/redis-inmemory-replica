@@ -222,7 +222,9 @@ func (l *mockLogger) Info(msg string, fields ...interface{}) {
 	logStr := msg
 	for i := 0; i < len(fields); i += 2 {
 		if i+1 < len(fields) {
-			logStr += " " + fields[i].(string) + "=" + getString(fields[i+1])
+			key := getString(fields[i])
+			value := getString(fields[i+1])
+			logStr += " " + key + "=" + value
 		}
 	}
 	l.logs = append(l.logs, logStr)
@@ -232,7 +234,9 @@ func (l *mockLogger) Error(msg string, fields ...interface{}) {
 	logStr := "ERROR: " + msg
 	for i := 0; i < len(fields); i += 2 {
 		if i+1 < len(fields) {
-			logStr += " " + fields[i].(string) + "=" + getString(fields[i+1])
+			key := getString(fields[i])
+			value := getString(fields[i+1])
+			logStr += " " + key + "=" + value
 		}
 	}
 	l.logs = append(l.logs, logStr)
