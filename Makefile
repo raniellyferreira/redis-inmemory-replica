@@ -35,6 +35,7 @@ build: ## Build the library and examples
 	$(GOBUILD) $(LDFLAGS) -o bin/cluster-example ./examples/cluster
 	$(GOBUILD) $(LDFLAGS) -o bin/database-filtering-example ./examples/database-filtering
 	$(GOBUILD) $(LDFLAGS) -o bin/rdb-logging-demo ./examples/rdb-logging-demo
+	$(GOBUILD) $(LDFLAGS) -o bin/timeout-demo ./examples/timeout-demo
 
 test: ## Run tests
 	@echo "Running tests..."

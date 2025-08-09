@@ -738,6 +738,14 @@ func (c *Client) streamCommands() error {
 		// Create a new reader to ensure clean state
 		c.reader = protocol.NewReader(c.conn)
 		c.logger.Debug("Created fresh reader for command streaming")
+
+		// Remove read timeout during streaming phase to allow indefinite waiting
+		// Redis replication streams can be idle for long periods, this is normal behavior
+		if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+			c.mu.Unlock()
+			return fmt.Errorf("failed to remove read timeout for streaming: %w", err)
+		}
+		c.logger.Debug("Removed read timeout for replication streaming")
 	}
 	c.mu.Unlock()
 
@@ -1150,10 +1158,12 @@ func (l *defaultLogger) Error(msg string, fields ...interface{}) {
 }
 
 // setConnectionTimeouts sets enhanced connection timeouts with improved error handling
+// These timeouts are applied during connection establishment, authentication, and sync phases.
+// The read timeout will be removed during the streaming phase to allow indefinite waiting.
 func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 	now := time.Now()
 
-	// Set read timeout with validation
+	// Set read timeout with validation - used for handshake/sync phases
 	if c.readTimeout > 0 {
 		if c.readTimeout < time.Millisecond {
 			return fmt.Errorf("read timeout too small: %v (minimum: 1ms)", c.readTimeout)
