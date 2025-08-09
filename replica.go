@@ -94,6 +94,7 @@ func New(opts ...Option) (*Replica, error) {
 	syncMgr.SetConnectTimeout(cfg.connectTimeout)
 	syncMgr.SetReadTimeout(cfg.readTimeout)
 	syncMgr.SetWriteTimeout(cfg.writeTimeout)
+	syncMgr.SetHeartbeatInterval(cfg.heartbeatInterval)
 	syncMgr.SetCommandFilters(cfg.commandFilters)
 	syncMgr.SetDatabases(cfg.databases)
 

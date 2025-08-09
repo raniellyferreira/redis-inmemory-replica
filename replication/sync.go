@@ -129,6 +129,11 @@ func (sm *SyncManager) SetDatabases(databases []int) {
 	sm.client.SetDatabases(databases)
 }
 
+// SetHeartbeatInterval sets the interval for sending REPLCONF ACK during streaming
+func (sm *SyncManager) SetHeartbeatInterval(interval time.Duration) {
+	sm.client.SetHeartbeatInterval(interval)
+}
+
 // Start begins synchronization
 func (sm *SyncManager) Start(ctx context.Context) error {
 	// Use atomic check and set to prevent concurrent start operations

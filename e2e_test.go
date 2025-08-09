@@ -596,6 +596,456 @@ func deleteRedisKeyWithAuth(addr, password, key string) error {
 	return nil
 }
 
+// TestHeartbeatConnectionStability tests heartbeat mechanism for 2 minutes
+func TestHeartbeatConnectionStability(t *testing.T) {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	if !isRedisAvailable(redisAddr) {
+		t.Skip("Redis not available at", redisAddr, "- skipping heartbeat stability test")
+	}
+
+	t.Log("Testing heartbeat connection stability for 2 minutes")
+
+	// Clear Redis
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Fatalf("Failed to clear Redis: %v", err)
+	}
+
+	// Create replica with heartbeat enabled (default 30s)
+	replicaOptions := []redisreplica.Option{
+		redisreplica.WithMaster(redisAddr),
+		redisreplica.WithSyncTimeout(30 * time.Second),
+		// Default heartbeat interval is 30s - let it run automatically
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
+	if err != nil {
+		t.Fatalf("Failed to create replica: %v", err)
+	}
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
+
+	// Track sync completion
+	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
+	replica.OnSyncComplete(func() {
+		t.Log("✅ Initial synchronization completed")
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
+	})
+
+	// Start replication
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute) // Extra time for test
+	defer cancel()
+
+	t.Log("🚀 Starting replica with heartbeat enabled...")
+	if err := replica.Start(ctx); err != nil {
+		t.Fatalf("Failed to start replica: %v", err)
+	}
+
+	// Wait for initial sync
+	t.Log("📡 Waiting for initial synchronization...")
+	select {
+	case <-syncCompleted:
+		t.Log("Initial sync completed successfully")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Initial sync timeout")
+	case <-ctx.Done():
+		t.Fatal("Context cancelled during initial sync")
+	}
+
+	// Set an initial key to test basic replication
+	if err := setRedisKeyWithAuth(redisAddr, redisPassword, "heartbeat:test", "initial_value"); err != nil {
+		t.Fatalf("Failed to set initial test key: %v", err)
+	}
+
+	time.Sleep(2 * time.Second) // Wait for replication
+
+	// Verify initial replication works
+	storage := replica.Storage()
+	if value, exists := storage.Get("heartbeat:test"); !exists {
+		t.Fatal("Initial test key not replicated")
+	} else if string(value) != "initial_value" {
+		t.Fatalf("Initial test key value mismatch: expected 'initial_value', got '%s'", string(value))
+	}
+
+	t.Log("✅ Initial replication verified, starting 2-minute heartbeat stability test...")
+
+	// Monitor connection for 2 minutes
+	testDuration := 2 * time.Minute
+	startTime := time.Now()
+	checkInterval := 5 * time.Second
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	connectionChecks := 0
+	connectedChecks := 0
+	var lastOffset int64 = -1
+
+	for {
+		select {
+		case <-ticker.C:
+			connectionChecks++
+			
+			// Check connection status
+			status := replica.SyncStatus()
+			
+			if status.Connected {
+				connectedChecks++
+				t.Logf("✅ Check %d: Connected, offset: %d, commands: %d", 
+					connectionChecks, status.ReplicationOffset, status.CommandsProcessed)
+				
+				// Verify offset is not going backwards (should only increase or stay same)
+				if lastOffset >= 0 && status.ReplicationOffset < lastOffset {
+					t.Errorf("❌ Replication offset went backwards: %d -> %d", lastOffset, status.ReplicationOffset)
+				}
+				lastOffset = status.ReplicationOffset
+			} else {
+				t.Errorf("❌ Check %d: Disconnected! This indicates heartbeat failure", connectionChecks)
+			}
+
+			// Set a test key to verify replication is still working
+			testKey := fmt.Sprintf("heartbeat:check:%d", connectionChecks)
+			testValue := fmt.Sprintf("value_%d_%d", connectionChecks, time.Now().Unix())
+			
+			if err := setRedisKeyWithAuth(redisAddr, redisPassword, testKey, testValue); err != nil {
+				t.Errorf("Failed to set heartbeat check key %s: %v", testKey, err)
+			} else {
+				// Give a moment for replication
+				time.Sleep(500 * time.Millisecond)
+				
+				// Verify the key was replicated
+				if replicatedValue, exists := replica.Storage().Get(testKey); !exists {
+					t.Errorf("❌ Heartbeat check key %s not replicated", testKey)
+				} else if string(replicatedValue) != testValue {
+					t.Errorf("❌ Heartbeat check key %s value mismatch: expected %s, got %s", 
+						testKey, testValue, string(replicatedValue))
+				}
+			}
+
+		case <-ctx.Done():
+			t.Fatal("Context cancelled during heartbeat test")
+		}
+
+		// Check if we've completed the test duration
+		if time.Since(startTime) >= testDuration {
+			break
+		}
+	}
+
+	ticker.Stop()
+
+	// Final verification
+	connectionSuccessRate := float64(connectedChecks) / float64(connectionChecks) * 100
+	t.Logf("🏁 Heartbeat stability test completed:")
+	t.Logf("   Duration: %v", testDuration)
+	t.Logf("   Connection checks: %d", connectionChecks)
+	t.Logf("   Connected checks: %d", connectedChecks)
+	t.Logf("   Connection success rate: %.1f%%", connectionSuccessRate)
+
+	// Expect at least 95% connection success rate (allowing for brief network hiccups)
+	if connectionSuccessRate < 95.0 {
+		t.Errorf("❌ Connection success rate too low: %.1f%% (expected ≥95%%)", connectionSuccessRate)
+		t.Error("This indicates the heartbeat mechanism is not effectively preventing timeouts")
+	} else {
+		t.Logf("✅ Heartbeat successfully maintained connection stability (%.1f%% success rate)", connectionSuccessRate)
+	}
+
+	// Verify we have some replication activity
+	finalStatus := replica.SyncStatus()
+	if finalStatus.CommandsProcessed == 0 {
+		t.Error("❌ No commands were processed during the test")
+	} else {
+		t.Logf("✅ Total commands processed during test: %d", finalStatus.CommandsProcessed)
+	}
+
+	t.Log("✅ Heartbeat connection stability test completed successfully")
+}
+
+// TestReplicationDuringActiveChanges tests replication during 2 minutes of continuous changes
+func TestReplicationDuringActiveChanges(t *testing.T) {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	if !isRedisAvailable(redisAddr) {
+		t.Skip("Redis not available at", redisAddr, "- skipping active changes replication test")
+	}
+
+	t.Log("Testing replication during 2 minutes of continuous master changes")
+
+	// Clear Redis
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
+		t.Fatalf("Failed to clear Redis: %v", err)
+	}
+
+	// Create replica
+	replicaOptions := []redisreplica.Option{
+		redisreplica.WithMaster(redisAddr),
+		redisreplica.WithSyncTimeout(30 * time.Second),
+		redisreplica.WithHeartbeatInterval(30 * time.Second), // Shorter interval for this test
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
+	if err != nil {
+		t.Fatalf("Failed to create replica: %v", err)
+	}
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			t.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
+
+	// Track sync completion
+	syncCompleted := make(chan struct{})
+	var syncOnce sync.Once
+	replica.OnSyncComplete(func() {
+		t.Log("✅ Initial synchronization completed")
+		syncOnce.Do(func() {
+			close(syncCompleted)
+		})
+	})
+
+	// Start replication
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute) // Extra time for test
+	defer cancel()
+
+	t.Log("🚀 Starting replica...")
+	if err := replica.Start(ctx); err != nil {
+		t.Fatalf("Failed to start replica: %v", err)
+	}
+
+	// Wait for initial sync
+	t.Log("📡 Waiting for initial synchronization...")
+	select {
+	case <-syncCompleted:
+		t.Log("Initial sync completed successfully")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Initial sync timeout")
+	case <-ctx.Done():
+		t.Fatal("Context cancelled during initial sync")
+	}
+
+	time.Sleep(2 * time.Second) // Stabilization
+
+	t.Log("🔄 Starting 2 minutes of continuous changes to master...")
+
+	// Run continuous changes for 2 minutes
+	testDuration := 2 * time.Minute
+	
+	// Tracking variables
+	totalOperations := 0
+	setOperations := 0
+	deleteOperations := 0
+	updateOperations := 0
+	errors := 0
+
+	// Channel to coordinate goroutines
+	stopChanges := make(chan struct{})
+	changesComplete := make(chan struct{})
+
+	// Goroutine for continuous changes
+	go func() {
+		defer close(changesComplete)
+		
+		operationCounter := 0
+		for {
+			select {
+			case <-stopChanges:
+				t.Logf("📊 Change operations completed: %d total operations", operationCounter)
+				return
+			default:
+				operationCounter++
+				
+				// Vary the types of operations
+				switch operationCounter % 4 {
+				case 0: // SET operation
+					key := fmt.Sprintf("active:set:%d", operationCounter)
+					value := fmt.Sprintf("value_%d_%d", operationCounter, time.Now().UnixNano())
+					if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+						t.Logf("Warning: Failed to set key %s: %v", key, err)
+						errors++
+					} else {
+						setOperations++
+					}
+					
+				case 1: // UPDATE operation (overwrite existing key)
+					if setOperations > 0 {
+						key := fmt.Sprintf("active:set:%d", (operationCounter/4)*4) // Reference previous SET
+						value := fmt.Sprintf("updated_%d_%d", operationCounter, time.Now().UnixNano())
+						if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+							t.Logf("Warning: Failed to update key %s: %v", key, err)
+							errors++
+						} else {
+							updateOperations++
+						}
+					}
+					
+				case 2: // SET with different pattern
+					key := fmt.Sprintf("active:data:%d", operationCounter)
+					// Vary data sizes more conservatively
+					dataSize := 10 + (operationCounter % 50) // 10-59 bytes
+					value := fmt.Sprintf("data_%d_", operationCounter) + strings.Repeat("X", dataSize)
+					if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+						t.Logf("Warning: Failed to set data key %s: %v", key, err)
+						errors++
+					} else {
+						setOperations++
+					}
+					
+				case 3: // DELETE operation (delete some older keys)
+					if operationCounter > 20 { // Only start deleting after we have some keys
+						// Delete both types of keys that were created
+						if operationCounter%2 == 0 {
+							keyToDelete := fmt.Sprintf("active:set:%d", operationCounter-20)
+							if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, keyToDelete); err != nil {
+								t.Logf("Warning: Failed to delete key %s: %v", keyToDelete, err)
+								errors++
+							} else {
+								deleteOperations++
+							}
+						} else {
+							keyToDelete := fmt.Sprintf("active:data:%d", operationCounter-20)
+							if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, keyToDelete); err != nil {
+								t.Logf("Warning: Failed to delete key %s: %v", keyToDelete, err)
+								errors++
+							} else {
+								deleteOperations++
+							}
+						}
+					}
+				}
+				
+				totalOperations++
+				
+				// Brief pause between operations to avoid overwhelming Redis
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+	}()
+
+	// Goroutine to monitor replication status
+	statusTicker := time.NewTicker(10 * time.Second)
+	defer statusTicker.Stop()
+	
+	statusChecks := 0
+	connectedStatusChecks := 0
+	
+	statusMonitorDone := make(chan struct{})
+	go func() {
+		defer close(statusMonitorDone)
+		
+		for {
+			select {
+			case <-stopChanges:
+				return
+			case <-statusTicker.C:
+				statusChecks++
+				status := replica.SyncStatus()
+				
+				if status.Connected {
+					connectedStatusChecks++
+					t.Logf("📈 Status check %d: Connected, offset: %d, commands: %d", 
+						statusChecks, status.ReplicationOffset, status.CommandsProcessed)
+				} else {
+					t.Errorf("❌ Status check %d: Disconnected during active changes!", statusChecks)
+				}
+			}
+		}
+	}()
+
+	// Wait for test duration
+	time.Sleep(testDuration)
+	
+	// Stop changes
+	close(stopChanges)
+	
+	// Wait for goroutines to complete
+	<-changesComplete
+	<-statusMonitorDone
+
+	t.Logf("🏁 Continuous changes phase completed:")
+	t.Logf("   Duration: %v", testDuration)
+	t.Logf("   Total operations: %d", totalOperations)
+	t.Logf("   SET operations: %d", setOperations)
+	t.Logf("   UPDATE operations: %d", updateOperations)
+	t.Logf("   DELETE operations: %d", deleteOperations)
+	t.Logf("   Errors: %d", errors)
+
+	// Allow time for final replication
+	t.Log("⏳ Allowing time for final replication...")
+	time.Sleep(5 * time.Second)
+
+	// Verify replication results
+	storage := replica.Storage()
+	replicatedKeys := storage.Keys()
+	
+	t.Logf("🔍 Verifying replication results:")
+	t.Logf("   Keys in replica: %d", len(replicatedKeys))
+
+	// Verify connection stability during changes
+	connectionSuccessRate := float64(connectedStatusChecks) / float64(statusChecks) * 100
+	t.Logf("   Connection success rate: %.1f%%", connectionSuccessRate)
+
+	if connectionSuccessRate < 90.0 {
+		t.Errorf("❌ Connection success rate during active changes too low: %.1f%% (expected ≥90%%)", connectionSuccessRate)
+	}
+
+	// Verify some replication occurred
+	finalStatus := replica.SyncStatus()
+	if finalStatus.CommandsProcessed < int64(totalOperations/2) {
+		t.Errorf("❌ Too few commands replicated: %d processed vs %d sent (expected at least 50%%)", 
+			finalStatus.CommandsProcessed, totalOperations)
+	}
+
+	// Sample verification: check that some specific keys exist and have correct values
+	sampleVerificationErrors := 0
+	samplesToCheck := 10
+	
+	for i := 0; i < samplesToCheck && i*4 < totalOperations; i++ {
+		key := fmt.Sprintf("active:set:%d", i*4)
+		if value, exists := storage.Get(key); exists {
+			// The key might have been updated or deleted, so we just verify it exists
+			t.Logf("✅ Sample key %s exists with value length: %d", key, len(value))
+		} else {
+			// Check if it was deleted
+			expectedDeleteOperation := (i*4 + 20) < totalOperations
+			if !expectedDeleteOperation {
+				sampleVerificationErrors++
+				t.Logf("❌ Sample key %s missing (not expected to be deleted)", key)
+			} else {
+				t.Logf("✅ Sample key %s absent (expected - was deleted)", key)
+			}
+		}
+	}
+
+	if sampleVerificationErrors > samplesToCheck/2 {
+		t.Errorf("❌ Too many sample verification errors: %d/%d", sampleVerificationErrors, samplesToCheck)
+	}
+
+	t.Logf("✅ Replication during active changes test completed successfully")
+	t.Logf("   Final status: %d commands processed, %d keys in replica", 
+		finalStatus.CommandsProcessed, len(replicatedKeys))
+}
+
 // TestFullSyncAndIncremental tests both full sync and incremental replication
 func TestFullSyncAndIncremental(t *testing.T) {
 	redisAddr := os.Getenv("REDIS_ADDR")
