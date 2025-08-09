@@ -574,11 +574,14 @@ func (c *Client) performSync() error {
 	c.logger.Debug("PSYNC response received", "response", responseStr)
 
 	parts := strings.Fields(responseStr)
-	if len(parts) < 3 {
+	if len(parts) < 1 {
 		return fmt.Errorf("invalid PSYNC response: %s", responseStr)
 	}
 
 	if parts[0] == "FULLRESYNC" {
+		if len(parts) < 3 {
+			return fmt.Errorf("invalid FULLRESYNC response: %s", responseStr)
+		}
 		c.replID = parts[1]
 		offset, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil {
@@ -592,6 +595,11 @@ func (c *Client) performSync() error {
 		if err := c.performFullSync(); err != nil {
 			return err
 		}
+	} else if parts[0] == "CONTINUE" {
+		// Partial resync successful - no RDB transfer needed
+		c.logger.Info("Partial resync successful - continuing replication stream")
+		// The master will start sending incremental commands directly
+		// No need to perform full sync
 	} else {
 		return fmt.Errorf("unsupported PSYNC response: %s", responseStr)
 	}
@@ -622,11 +630,26 @@ func (c *Client) performSync() error {
 	return nil
 }
 
-// sendPSYNC sends PSYNC command
+// sendPSYNC sends PSYNC command - attempts partial sync if possible
 func (c *Client) sendPSYNC() error {
-	// For initial sync, use PSYNC ? -1
-	if err := c.writer.WriteCommand("PSYNC", "?", "-1"); err != nil {
-		return err
+	// If we have a valid replication ID and offset, attempt partial sync
+	c.mu.RLock()
+	replID := c.replID
+	replOffset := c.replOffset
+	c.mu.RUnlock()
+
+	if replID != "" && replOffset > 0 {
+		// Attempt partial sync using saved replication state
+		c.logger.Debug("Attempting partial sync", "repl_id", replID, "offset", replOffset)
+		if err := c.writer.WriteCommand("PSYNC", replID, fmt.Sprintf("%d", replOffset)); err != nil {
+			return err
+		}
+	} else {
+		// For initial sync, use PSYNC ? -1
+		c.logger.Debug("Attempting full sync (no previous replication state)")
+		if err := c.writer.WriteCommand("PSYNC", "?", "-1"); err != nil {
+			return err
+		}
 	}
 	return c.writer.Flush()
 }
@@ -652,6 +675,9 @@ func (c *Client) performFullSync() error {
 		logger: c.logger,
 	}
 
+	// Create chunk aggregator for batched logging
+	chunkAgg := newRDBChunkAggregator(c.logger)
+
 	// Read RDB data as streaming bulk string
 	c.logger.Debug("Reading RDB data stream")
 	err := c.reader.ReadBulkStringForReplication(func(chunk []byte) error {
@@ -660,7 +686,8 @@ func (c *Client) performFullSync() error {
 			return nil
 		}
 
-		c.logger.Debug("Received RDB chunk", "size", len(chunk))
+		// Record chunk for aggregated logging
+		chunkAgg.addChunk(len(chunk))
 
 		// Copy chunk to avoid buffer reuse issues
 		chunkCopy := make([]byte, len(chunk))
@@ -674,7 +701,8 @@ func (c *Client) performFullSync() error {
 		return fmt.Errorf("failed to read RDB data: %w", err)
 	}
 
-	c.logger.Debug("RDB data reading completed", "totalSize", rdbBuffer.totalSize, "chunks", len(rdbBuffer.chunks))
+	// Log final chunk statistics
+	chunkAgg.logFinal()
 
 	// Parse RDB from collected buffer
 	if err := ParseRDB(rdbBuffer, handler); err != nil {
@@ -1011,6 +1039,52 @@ func (h *rdbStorageHandler) OnEnd() error {
 	// Log final statistics
 	h.stats.LogFinal(h.logger)
 	return nil
+}
+
+// rdbChunkAggregator tracks RDB chunk statistics for aggregated logging
+type rdbChunkAggregator struct {
+	chunkCount int
+	totalSize  int
+	startTime  time.Time
+	logger     Logger
+	logThreshold int // Log every N chunks
+}
+
+// newRDBChunkAggregator creates a new chunk aggregator
+func newRDBChunkAggregator(logger Logger) *rdbChunkAggregator {
+	return &rdbChunkAggregator{
+		startTime:    time.Now(),
+		logger:       logger,
+		logThreshold: 10, // Log every 10 chunks by default
+	}
+}
+
+// addChunk records a chunk and logs if threshold is reached
+func (agg *rdbChunkAggregator) addChunk(size int) {
+	agg.chunkCount++
+	agg.totalSize += size
+	
+	// Log every N chunks or if we've received a significant amount of data
+	if agg.chunkCount%agg.logThreshold == 0 || agg.totalSize%50000 == 0 {
+		elapsed := time.Since(agg.startTime)
+		rate := float64(agg.totalSize) / elapsed.Seconds()
+		agg.logger.Debug("RDB chunk progress", 
+			"chunks", agg.chunkCount,
+			"totalSize", agg.totalSize,
+			"elapsed", elapsed.Round(10*time.Millisecond),
+			"rate", fmt.Sprintf("%.1f KB/s", rate/1024))
+	}
+}
+
+// logFinal logs final chunk statistics
+func (agg *rdbChunkAggregator) logFinal() {
+	elapsed := time.Since(agg.startTime)
+	rate := float64(agg.totalSize) / elapsed.Seconds()
+	agg.logger.Debug("RDB data reading completed", 
+		"totalSize", agg.totalSize, 
+		"chunks", agg.chunkCount,
+		"elapsed", elapsed.Round(10*time.Millisecond),
+		"rate", fmt.Sprintf("%.1f KB/s", rate/1024))
 }
 
 // rdbStreamBuffer collects RDB data chunks and provides a Reader interface
