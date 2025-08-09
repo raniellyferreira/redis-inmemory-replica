@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive integration tests** using `github.com/redis/go-redis/v9`
 - **Enhanced storage interface** with `PTTL()` method for millisecond precision TTL
 - **Enhanced sync manager** with `IsInitialSyncCompleted()` method
+- **Write command redirection** with `WithWriteRedirection(enabled bool)` option to optionally redirect write commands (`SET`, `DEL`, etc.) to master instead of returning READONLY errors
 
 ### Changed
 - **BREAKING**: Server now starts automatically when `WithReplicaAddr()` is provided - no separate configuration needed

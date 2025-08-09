@@ -172,6 +172,45 @@ err = client.Del(ctx, "key").Err()
 // err.Error() contains "READONLY"
 ```
 
+### Write Command Redirection
+
+Optionally, you can enable write command redirection to forward write operations to the master instead of returning READONLY errors:
+
+```go
+// Default behavior: return READONLY errors for writes
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("localhost:6379"),
+    redisreplica.WithReplicaAddr(":6380"),
+    // WithWriteRedirection defaults to false
+)
+
+// Enable write redirection to master
+replica, err := redisreplica.New(
+    redisreplica.WithMaster("localhost:6379"),
+    redisreplica.WithReplicaAddr(":6380"),
+    redisreplica.WithWriteRedirection(true), // Forward writes to master
+)
+```
+
+When enabled, write commands are automatically forwarded to the master with proper authentication, and responses are proxied back to clients:
+
+```go
+client := redis.NewClient(&redis.Options{Addr: ":6380"})
+
+// With redirection enabled, this will succeed by forwarding to master
+err := client.Set(ctx, "key", "value", 0).Err()
+if err != nil {
+    log.Printf("Set failed: %v", err) // Only fails if master is unreachable
+} else {
+    log.Println("Write successfully forwarded to master")
+}
+
+// Read operations continue to work normally from replica
+val, err := client.Get(ctx, "key").Result()
+```
+
+**Note**: Write redirection requires the master to be accessible and may introduce additional latency. Use this feature when you need seamless read/write access through the replica.
+
 ### Loading State
 
 Before initial synchronization completes, read operations return LOADING errors:
