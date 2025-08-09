@@ -34,6 +34,7 @@ type config struct {
 	// Behavioral options
 	readOnly       bool
 	commandFilters []string
+	redirectWrites bool // Whether to redirect write commands to master instead of returning READONLY error
 }
 
 // defaultConfig returns a configuration with sensible defaults
@@ -49,6 +50,7 @@ func defaultConfig() *config {
 		heartbeatInterval: 30 * time.Second, // Send REPLCONF ACK every 30 seconds
 		maxMemory:         0,                 // unlimited
 		readOnly:          true,
+		redirectWrites:    false, // Default: return READONLY error for writes
 		logger:            &defaultLogger{},
 		commandFilters:    []string{},
 	}
@@ -458,6 +460,24 @@ func WithDatabases(databases []int) Option {
 func WithReplicaAuth(password string) Option {
 	return func(c *config) error {
 		c.replicaPassword = password
+		return nil
+	}
+}
+
+// WithWriteRedirection enables redirection of write commands to the master
+// instead of returning READONLY errors (default: false)
+// 
+// When enabled, write commands like SET, DEL, etc. will be forwarded to the master
+// and the response will be returned to the client. When disabled (default), 
+// write commands return "READONLY You can't write against a read only replica"
+//
+// Example:
+//
+//	WithWriteRedirection(true)  // Enable write redirection
+//	WithWriteRedirection(false) // Disable write redirection (default)
+func WithWriteRedirection(enabled bool) Option {
+	return func(c *config) error {
+		c.redirectWrites = enabled
 		return nil
 	}
 }

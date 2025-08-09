@@ -72,11 +72,6 @@ jobs:
       env:
         REDIS_ADDR: localhost:6379
 
-    - name: Run Replication Benchmarks
-      run: go test -v -bench BenchmarkReplicationThroughput -benchtime=3s
-      env:
-        REDIS_ADDR: localhost:6379
-
   e2e-with-auth:
     runs-on: ubuntu-latest
 

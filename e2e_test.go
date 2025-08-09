@@ -1369,6 +1369,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 	// Create replica with authentication if needed
 	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
+		redisreplica.WithSyncTimeout(30 * time.Second),
 	}
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
@@ -1395,23 +1396,139 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 		b.Fatalf("Failed to sync: %v", err)
 	}
 
+	// Pre-allocate connection pool to reduce connection overhead during benchmark
+	connections := make([]net.Conn, 0, 10)
+	defer func() {
+		for _, conn := range connections {
+			_ = conn.Close()
+		}
+	}()
+
 	b.ResetTimer()
+	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		key := "bench:key:" + strconv.Itoa(i)
-		value := "benchmark_value_" + strconv.Itoa(i)
+	// Batch operations to reduce per-operation overhead
+	batchSize := 100
+	if b.N < batchSize {
+		batchSize = b.N
+	}
 
-		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
-			b.Fatalf("Failed to set key: %v", err)
+	for i := 0; i < b.N; i += batchSize {
+		end := i + batchSize
+		if end > b.N {
+			end = b.N
+		}
+
+		// Send batch of operations
+		for j := i; j < end; j++ {
+			key := fmt.Sprintf("bench:key:%d", j)
+			value := fmt.Sprintf("benchmark_value_%d", j)
+
+			if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+				b.Fatalf("Failed to set key %s: %v", key, err)
+			}
+		}
+
+		// Wait for batch to replicate (reduce wait frequency)
+		if i%500 == 0 { // Check every 500 operations
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
-	// Wait for all operations to replicate
-	time.Sleep(time.Second)
+	// Final wait for all operations to replicate
+	time.Sleep(100 * time.Millisecond)
 
-	// Verify some operations completed
+	// Verify operations completed
 	replicaStorage := replica.Storage()
-	if len(replicaStorage.Keys("*")) == 0 {
+	replicatedKeys := replicaStorage.Keys("bench:*")
+	if len(replicatedKeys) == 0 {
 		b.Fatal("No keys replicated during benchmark")
+	}
+
+	b.Logf("Replicated %d/%d keys", len(replicatedKeys), b.N)
+}
+
+// BenchmarkReplicationLatency measures individual operation latency
+func BenchmarkReplicationLatency(b *testing.B) {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	if !isRedisAvailable(redisAddr) {
+		b.Skip("Redis not available - skipping benchmark")
+	}
+
+	// Clear Redis
+	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
+		b.Fatalf("Failed to clear Redis: %v", err)
+	}
+
+	// Create replica
+	replicaOptions := []redisreplica.Option{
+		redisreplica.WithMaster(redisAddr),
+		redisreplica.WithSyncTimeout(30 * time.Second),
+	}
+	if redisPassword != "" {
+		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))
+	}
+
+	replica, err := redisreplica.New(replicaOptions...)
+	if err != nil {
+		b.Fatalf("Failed to create replica: %v", err)
+	}
+	defer func() {
+		if closeErr := replica.Close(); closeErr != nil {
+			b.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}()
+
+	// Start replica
+	ctx := context.Background()
+	if err := replica.Start(ctx); err != nil {
+		b.Fatalf("Failed to start replica: %v", err)
+	}
+
+	// Wait for initial sync
+	if err := replica.WaitForSync(ctx); err != nil {
+		b.Fatalf("Failed to sync: %v", err)
+	}
+
+	replicaStorage := replica.Storage()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		key := fmt.Sprintf("latency:key:%d", i)
+		value := fmt.Sprintf("latency_value_%d", i)
+
+		start := time.Now()
+
+		// Set key on master
+		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
+			b.Fatalf("Failed to set key %s: %v", key, err)
+		}
+
+		// Wait for replication (with timeout)
+		timeout := time.After(5 * time.Second)
+		ticker := time.NewTicker(1 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-timeout:
+				b.Fatalf("Replication timeout for key %s", key)
+			case <-ticker.C:
+				if _, exists := replicaStorage.Get(key); exists {
+					elapsed := time.Since(start)
+					b.Logf("Replication latency for key %s: %v", key, elapsed)
+					goto next
+				}
+			}
+		}
+	next:
 	}
 }

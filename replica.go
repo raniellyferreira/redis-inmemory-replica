@@ -117,6 +117,10 @@ func New(opts ...Option) (*Replica, error) {
 		}
 		// Set server to track sync status for LOADING state
 		replica.server.SetSyncManager(syncMgr)
+		// Configure write redirection if enabled
+		if cfg.redirectWrites {
+			replica.server.SetWriteRedirection(true, cfg.masterAddr, cfg.masterPassword)
+		}
 	}
 
 	// Register sync completion callback

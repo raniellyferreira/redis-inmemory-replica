@@ -26,6 +26,11 @@ type Server struct {
 	addr     string
 	password string
 
+	// Write redirection settings
+	redirectWrites bool
+	masterAddr     string
+	masterPassword string
+
 	// Connection management
 	listener net.Listener
 	clients  sync.Map // map[net.Conn]*Client
@@ -80,6 +85,13 @@ func (s *Server) SetPassword(password string) {
 // SetSyncManager sets the sync manager for tracking sync status
 func (s *Server) SetSyncManager(syncMgr *replication.SyncManager) {
 	s.syncMgr = syncMgr
+}
+
+// SetWriteRedirection configures write command redirection to master
+func (s *Server) SetWriteRedirection(enabled bool, masterAddr, masterPassword string) {
+	s.redirectWrites = enabled
+	s.masterAddr = masterAddr
+	s.masterPassword = masterPassword
 }
 
 // Start starts the Redis server
@@ -371,11 +383,19 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 }
 
 func (c *Client) handleSet(cmd *protocol.Command) {
-	c.writeError("READONLY You can't write against a read only replica")
+	if c.server.redirectWrites {
+		c.redirectToMaster(cmd)
+	} else {
+		c.writeError("READONLY You can't write against a read only replica")
+	}
 }
 
 func (c *Client) handleDel(cmd *protocol.Command) {
-	c.writeError("READONLY You can't write against a read only replica")
+	if c.server.redirectWrites {
+		c.redirectToMaster(cmd)
+	} else {
+		c.writeError("READONLY You can't write against a read only replica")
+	}
 }
 
 func (c *Client) handleExists(cmd *protocol.Command) {
@@ -890,5 +910,143 @@ func (c *Client) writeResult(result interface{}) {
 		c.writeArray(array)
 	default:
 		c.writeBulkString([]byte(fmt.Sprintf("%v", v)))
+	}
+}
+
+// redirectToMaster forwards a command to the master Redis server and returns the response
+func (c *Client) redirectToMaster(cmd *protocol.Command) {
+	if c.server.masterAddr == "" {
+		c.writeError("ERR master address not configured for write redirection")
+		return
+	}
+
+	// Connect to master
+	conn, err := net.DialTimeout("tcp", c.server.masterAddr, 5*time.Second)
+	if err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to connect to master: %v", err))
+		return
+	}
+	defer conn.Close()
+
+	// Set connection timeouts
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to set connection deadline: %v", err))
+		return
+	}
+
+	masterWriter := protocol.NewWriter(conn)
+	masterReader := protocol.NewReader(conn)
+
+	// Authenticate with master if password is set
+	if c.server.masterPassword != "" {
+		authCmd := &protocol.Command{
+			Name: "AUTH",
+			Args: [][]byte{[]byte(c.server.masterPassword)},
+		}
+		if err := c.writeCommandToMaster(masterWriter, authCmd); err != nil {
+			c.writeError(fmt.Sprintf("ERR failed to send auth to master: %v", err))
+			return
+		}
+
+		// Read auth response
+		resp, err := masterReader.ReadNext()
+		if err != nil {
+			c.writeError(fmt.Sprintf("ERR failed to read auth response: %v", err))
+			return
+		}
+		if resp.Type == protocol.TypeError {
+			c.writeError(string(resp.Data))
+			return
+		}
+	}
+
+	// Send the original command to master
+	if err := c.writeCommandToMaster(masterWriter, cmd); err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to send command to master: %v", err))
+		return
+	}
+
+	// Read response from master and forward to client
+	resp, err := masterReader.ReadNext()
+	if err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to read response from master: %v", err))
+		return
+	}
+
+	// Forward the response to the client
+	c.forwardResponse(resp)
+}
+
+// writeCommandToMaster sends a command to the master server
+func (c *Client) writeCommandToMaster(writer *protocol.Writer, cmd *protocol.Command) error {
+	// Build command array
+	cmdArray := make([]protocol.Value, 1+len(cmd.Args))
+	cmdArray[0] = protocol.Value{Type: protocol.TypeBulkString, Data: []byte(cmd.Name)}
+	for i, arg := range cmd.Args {
+		cmdArray[i+1] = protocol.Value{Type: protocol.TypeBulkString, Data: arg}
+	}
+
+	if err := writer.WriteArray(cmdArray); err != nil {
+		return err
+	}
+	return writer.Flush()
+}
+
+// forwardResponse forwards a response from master to the client
+func (c *Client) forwardResponse(resp protocol.Value) {
+	switch resp.Type {
+	case protocol.TypeSimpleString:
+		c.writeString(string(resp.Data))
+	case protocol.TypeError:
+		c.writeError(string(resp.Data))
+	case protocol.TypeInteger:
+		c.writeInteger(resp.Integer)
+	case protocol.TypeBulkString:
+		if resp.IsNull {
+			c.writeNull()
+		} else {
+			c.writeBulkString(resp.Data)
+		}
+	case protocol.TypeArray:
+		if resp.IsNull {
+			c.writeNull()
+		} else {
+			// Convert protocol values to interface array for writeArray
+			array := make([]interface{}, len(resp.Array))
+			for i, val := range resp.Array {
+				array[i] = c.protocolValueToInterface(val)
+			}
+			c.writeArray(array)
+		}
+	default:
+		c.writeError("ERR unsupported response type from master")
+	}
+}
+
+// protocolValueToInterface converts a protocol.Value to interface{} for writeArray
+func (c *Client) protocolValueToInterface(val protocol.Value) interface{} {
+	switch val.Type {
+	case protocol.TypeSimpleString:
+		return string(val.Data)
+	case protocol.TypeError:
+		return fmt.Sprintf("ERR %s", string(val.Data))
+	case protocol.TypeInteger:
+		return val.Integer
+	case protocol.TypeBulkString:
+		if val.IsNull {
+			return nil
+		}
+		return val.Data
+	case protocol.TypeArray:
+		if val.IsNull {
+			return nil
+		}
+		array := make([]interface{}, len(val.Array))
+		for i, item := range val.Array {
+			array[i] = c.protocolValueToInterface(item)
+		}
+		return array
+	default:
+		return string(val.Data)
 	}
 }

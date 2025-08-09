@@ -46,16 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2025-08-08
 
 ### Added
-- Enhanced replica configuration and management capabilities
-- Improved error handling for edge cases
-- Additional stability improvements for production deployments
-
-### Changed  
-- Internal optimizations for better performance
-- Refined logging and monitoring features
-
-### Fixed
-- Various bug fixes and stability improvements
+- Complete Redis 7.x compatibility with LZF decompression, enhanced RDB parsing, comprehensive code quality improvements, robust authentication handling, and reliable shutdown process
+- Implement batched RDB logging, improve PSYNC reconnection logic, and resolve streaming timeout errors
 
 ## [1.1.0] - 2025-07-31
 
