@@ -616,11 +616,11 @@ func TestHeartbeatConnectionStability(t *testing.T) {
 		t.Fatalf("Failed to clear Redis: %v", err)
 	}
 
-	// Create replica with heartbeat enabled (default 45s)
+	// Create replica with heartbeat enabled (default 30s)
 	replicaOptions := []redisreplica.Option{
 		redisreplica.WithMaster(redisAddr),
 		redisreplica.WithSyncTimeout(30 * time.Second),
-		// Default heartbeat interval is 45s - let it run automatically
+		// Default heartbeat interval is 30s - let it run automatically
 	}
 	if redisPassword != "" {
 		replicaOptions = append(replicaOptions, redisreplica.WithMasterAuth(redisPassword))

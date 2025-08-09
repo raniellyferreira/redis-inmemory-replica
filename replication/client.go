@@ -220,7 +220,7 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		writeTimeout:      10 * time.Second,
 		commandFilters:    make(map[string]struct{}),
 		databases:         make(map[int]struct{}), // empty = replicate all
-		heartbeatInterval: 45 * time.Second,       // Send REPLCONF ACK every 45 seconds - conservative to avoid timeout issues
+		heartbeatInterval: 30 * time.Second,       // Send REPLCONF ACK every 30 seconds - conservative to avoid timeout issues
 		logger:            &defaultLogger{},
 	}
 }
@@ -287,8 +287,8 @@ func (c *Client) SetHeartbeatInterval(interval time.Duration) {
 	if interval > 0 {
 		c.heartbeatInterval = interval
 	} else if interval == 0 {
-		// interval == 0 means use default (45s)
-		c.heartbeatInterval = 45 * time.Second
+		// interval == 0 means use default (30s)
+		c.heartbeatInterval = 30 * time.Second
 	} else {
 		// interval < 0 means disable heartbeat
 		c.heartbeatInterval = -1

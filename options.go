@@ -47,7 +47,7 @@ func defaultConfig() *config {
 		connectTimeout:    5 * time.Second,
 		readTimeout:       30 * time.Second,
 		writeTimeout:      10 * time.Second,
-		heartbeatInterval: 45 * time.Second, // Send REPLCONF ACK every 45 seconds
+		heartbeatInterval: 30 * time.Second, // Send REPLCONF ACK every 30 seconds
 		maxMemory:         0,                 // unlimited
 		readOnly:          true,
 		enableServer:      true,
@@ -165,11 +165,11 @@ func WithWriteTimeout(timeout time.Duration) Option {
 
 // WithHeartbeatInterval sets the interval for sending REPLCONF ACK during streaming
 // This prevents Redis master from timing out the replica during idle periods
-// Set to 0 to use default (45s), or negative value to disable heartbeat
+// Set to 0 to use default (30s), or negative value to disable heartbeat
 //
 // Example:
 //
-//	WithHeartbeatInterval(45 * time.Second)
+//	WithHeartbeatInterval(30 * time.Second)
 func WithHeartbeatInterval(interval time.Duration) Option {
 	return func(c *config) error {
 		c.heartbeatInterval = interval

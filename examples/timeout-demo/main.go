@@ -28,7 +28,7 @@ func main() {
 	fmt.Println("✅ AFTER (Solution):")
 	fmt.Println("   • Keep read timeout for connection/auth/sync phases (30s)")
 	fmt.Println("   • Remove read timeout during replication streaming phase")
-	fmt.Println("   • Send periodic REPLCONF ACK commands (every 45s by default)")
+	fmt.Println("   • Send periodic REPLCONF ACK commands (every 30s by default)")
 	fmt.Println("   • Prevents master from timing out replica during idle periods")
 	fmt.Println("   • Allows replica to wait indefinitely for next command")
 	fmt.Println("   • Matches standard Redis replication behavior")
@@ -39,7 +39,7 @@ func main() {
 	fmt.Println("   • conn.SetReadDeadline(time.Time{}) removes timeout")
 	fmt.Println("   • Applied after entering streamCommands() phase")
 	fmt.Println("   • Periodic REPLCONF ACK <offset> commands sent via heartbeat")
-	fmt.Println("   • Heartbeat interval configurable (default 45s)")
+	fmt.Println("   • Heartbeat interval configurable (default 30s)")
 	fmt.Println("   • Timeout still active for handshake operations")
 	fmt.Println("   • Write timeout remains active for outgoing commands")
 	fmt.Println()
@@ -50,7 +50,7 @@ func main() {
 		redisreplica.WithSyncTimeout(30*time.Second),
 		redisreplica.WithReadTimeout(30*time.Second),       // Used only for handshake
 		redisreplica.WithWriteTimeout(10*time.Second),      // Always active
-		redisreplica.WithHeartbeatInterval(45*time.Second), // Send REPLCONF ACK every 45s
+		redisreplica.WithHeartbeatInterval(30*time.Second), // Send REPLCONF ACK every 30s
 	)
 	if err != nil {
 		log.Fatal("Failed to create replica:", err)
@@ -62,7 +62,7 @@ func main() {
 	fmt.Printf("   • Sync Timeout: 30s (for connection/auth/sync)\n")
 	fmt.Printf("   • Read Timeout: 30s (removed during streaming)\n")
 	fmt.Printf("   • Write Timeout: 10s (always active)\n")
-	fmt.Printf("   • Heartbeat Interval: 45s (REPLCONF ACK frequency)\n")
+	fmt.Printf("   • Heartbeat Interval: 30s (REPLCONF ACK frequency)\n")
 	fmt.Println()
 
 	fmt.Println("💡 Impact:")
