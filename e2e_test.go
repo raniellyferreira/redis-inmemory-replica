@@ -1384,14 +1384,19 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 		}
 	}()
 
-	// Start replica
-	ctx := context.Background()
+	// Start replica with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
 	if err := replica.Start(ctx); err != nil {
 		b.Fatalf("Failed to start replica: %v", err)
 	}
 
-	// Wait for initial sync
-	if err := replica.WaitForSync(ctx); err != nil {
+	// Wait for initial sync with timeout
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer syncCancel()
+	
+	if err := replica.WaitForSync(syncCtx); err != nil {
 		b.Fatalf("Failed to sync: %v", err)
 	}
 
@@ -1484,14 +1489,19 @@ func BenchmarkReplicationLatency(b *testing.B) {
 		}
 	}()
 
-	// Start replica
-	ctx := context.Background()
+	// Start replica with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
 	if err := replica.Start(ctx); err != nil {
 		b.Fatalf("Failed to start replica: %v", err)
 	}
 
-	// Wait for initial sync
-	if err := replica.WaitForSync(ctx); err != nil {
+	// Wait for initial sync with timeout
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer syncCancel()
+	
+	if err := replica.WaitForSync(syncCtx); err != nil {
 		b.Fatalf("Failed to sync: %v", err)
 	}
 
