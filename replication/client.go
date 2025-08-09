@@ -295,8 +295,8 @@ func (c *Client) SetHeartbeatInterval(interval time.Duration) {
 	if interval > 0 {
 		c.heartbeatInterval = interval
 	} else if interval == 0 {
-		// interval == 0 means use default (30s)
-		c.heartbeatInterval = 30 * time.Second
+		// interval == 0 means use default (10s) - aligned with Redis repl-ping-slave-period default
+		c.heartbeatInterval = 10 * time.Second
 	} else {
 		// interval < 0 means disable heartbeat
 		c.heartbeatInterval = -1
