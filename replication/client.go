@@ -220,7 +220,7 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 		writeTimeout:      10 * time.Second,
 		commandFilters:    make(map[string]struct{}),
 		databases:         make(map[int]struct{}), // empty = replicate all
-		heartbeatInterval: 45 * time.Second,       // Send REPLCONF ACK every 45 seconds
+		heartbeatInterval: 45 * time.Second,       // Send REPLCONF ACK every 45 seconds - conservative to avoid timeout issues
 		logger:            &defaultLogger{},
 	}
 }
@@ -1245,9 +1245,17 @@ func (c *Client) startHeartbeat() {
 				return
 			case <-ticker.C:
 				if err := c.sendReplconfACK(); err != nil {
-					c.logger.Debug("Heartbeat ACK failed", "error", err)
-					// Don't return here - let the main streaming loop handle connection errors
-					// The heartbeat failure will be detected when the connection is used next
+					// Classify heartbeat errors for better handling
+					errStr := err.Error()
+					if strings.Contains(errStr, "not connected") {
+						c.logger.Debug("Heartbeat skipped - not connected")
+					} else if strings.Contains(errStr, "connection closed") || strings.Contains(errStr, "broken pipe") {
+						c.logger.Debug("Heartbeat failed - connection closed", "error", err)
+						// Connection is broken, main replication loop will handle reconnection
+					} else {
+						c.logger.Debug("Heartbeat ACK failed", "error", err)
+					}
+					// Never terminate heartbeat goroutine on errors - be resilient like Redis
 				}
 			}
 		}
@@ -1264,47 +1272,20 @@ func (c *Client) stopHeartbeat() {
 }
 
 // sendReplconfACK sends a REPLCONF ACK command with current replication offset
+// This follows Redis pattern: best-effort heartbeat without blocking main replication
 func (c *Client) sendReplconfACK() error {
 	c.mu.RLock()
-	conn := c.conn
 	writer := c.writer
 	offset := c.replOffset
 	connected := c.connected
-	writeTimeout := c.writeTimeout
 	c.mu.RUnlock()
 
-	if !connected || writer == nil || conn == nil {
+	if !connected || writer == nil {
 		return fmt.Errorf("not connected")
 	}
 
-	// Set a shorter write timeout for heartbeat to avoid blocking
-	// Use half the heartbeat interval or the configured write timeout, whichever is smaller
-	heartbeatWriteTimeout := writeTimeout
-	if heartbeatWriteTimeout > c.heartbeatInterval/2 {
-		heartbeatWriteTimeout = c.heartbeatInterval / 2
-	}
-	if heartbeatWriteTimeout < 1*time.Second {
-		heartbeatWriteTimeout = 1 * time.Second // Minimum 1 second
-	}
-
-	// Temporarily set a shorter write timeout for heartbeat
-	if heartbeatWriteTimeout != writeTimeout {
-		if err := conn.SetWriteDeadline(time.Now().Add(heartbeatWriteTimeout)); err != nil {
-			c.logger.Debug("Failed to set heartbeat write timeout", "error", err)
-			// Continue with default timeout
-		}
-		// Restore original timeout after heartbeat
-		defer func() {
-			if writeTimeout > 0 {
-				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-			} else {
-				// Reset to no deadline if original writeTimeout was 0
-				_ = conn.SetWriteDeadline(time.Time{})
-			}
-		}()
-	}
-
-	// Send REPLCONF ACK with current offset
+	// Send REPLCONF ACK with current offset - use existing connection timeouts
+	// No special timeout handling - this follows Redis approach of best-effort heartbeat
 	if err := writer.WriteCommand("REPLCONF", "ACK", fmt.Sprintf("%d", offset)); err != nil {
 		return fmt.Errorf("failed to write REPLCONF ACK: %w", err)
 	}
@@ -1313,6 +1294,5 @@ func (c *Client) sendReplconfACK() error {
 		return fmt.Errorf("failed to flush REPLCONF ACK: %w", err)
 	}
 
-	c.logger.Debug("Sent REPLCONF ACK", "offset", offset)
 	return nil
 }
