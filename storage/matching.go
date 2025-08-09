@@ -30,7 +30,7 @@ type MatchingConfig struct {
 var (
 	// Default global configuration
 	globalMatchingConfig = &MatchingConfig{
-		strategy: StrategySimple, // Default to the fastest for simple patterns
+		strategy: StrategyGlob, // Default to glob matching for full Redis pattern support
 	}
 )
 

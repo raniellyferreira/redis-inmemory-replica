@@ -14,9 +14,5 @@
 --use-gitignore=true
 --rm=true
 
-# Resource limits (adjust based on your system)
---memory=4g
---cpus=2
-
 # Verbose output for debugging
 --verbose

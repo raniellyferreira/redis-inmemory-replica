@@ -12,17 +12,24 @@ import (
 
 	"github.com/raniellyferreira/redis-inmemory-replica/lua"
 	"github.com/raniellyferreira/redis-inmemory-replica/protocol"
+	"github.com/raniellyferreira/redis-inmemory-replica/replication"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
 // Server provides Redis protocol server functionality
 type Server struct {
-	storage storage.Storage
-	lua     *lua.Engine
+	storage   storage.Storage
+	lua       *lua.Engine
+	syncMgr   *replication.SyncManager
 
 	// Server configuration
 	addr     string
 	password string
+
+	// Write redirection settings
+	redirectWrites bool
+	masterAddr     string
+	masterPassword string
 
 	// Connection management
 	listener net.Listener
@@ -73,6 +80,18 @@ func NewServer(addr string, storage storage.Storage) *Server {
 // SetPassword sets the authentication password for the server
 func (s *Server) SetPassword(password string) {
 	s.password = password
+}
+
+// SetSyncManager sets the sync manager for tracking sync status
+func (s *Server) SetSyncManager(syncMgr *replication.SyncManager) {
+	s.syncMgr = syncMgr
+}
+
+// SetWriteRedirection configures write command redirection to master
+func (s *Server) SetWriteRedirection(enabled bool, masterAddr, masterPassword string) {
+	s.redirectWrites = enabled
+	s.masterAddr = masterAddr
+	s.masterPassword = masterPassword
 }
 
 // Start starts the Redis server
@@ -249,14 +268,34 @@ func (c *Client) executeCommand(cmd *protocol.Command) {
 		c.handleSelect(cmd)
 	case "GET":
 		c.handleGet(cmd)
+	case "MGET":
+		c.handleMGet(cmd)
 	case "SET":
 		c.handleSet(cmd)
 	case "DEL":
 		c.handleDel(cmd)
 	case "EXISTS":
 		c.handleExists(cmd)
+	case "TTL":
+		c.handleTTL(cmd)
+	case "PTTL":
+		c.handlePTTL(cmd)
 	case "TYPE":
 		c.handleType(cmd)
+	case "KEYS":
+		c.handleKeys(cmd)
+	case "SCAN":
+		c.handleScan(cmd)
+	case "DBSIZE":
+		c.handleDBSize(cmd)
+	case "INFO":
+		c.handleInfo(cmd)
+	case "ROLE":
+		c.handleRole(cmd)
+	case "COMMAND":
+		c.handleCommand(cmd)
+	case "READONLY":
+		c.handleReadOnly(cmd)
 	case "EVAL":
 		c.handleEval(cmd)
 	case "EVALSHA":
@@ -329,6 +368,12 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 		return
 	}
 
+	// Check if initial sync is completed
+	if c.server.syncMgr != nil && !c.server.syncMgr.IsInitialSyncCompleted() {
+		c.writeError("LOADING Redis is loading the dataset in memory")
+		return
+	}
+
 	value, exists := c.server.storage.Get(string(cmd.Args[0]))
 	if !exists {
 		c.writeNull()
@@ -338,38 +383,19 @@ func (c *Client) handleGet(cmd *protocol.Command) {
 }
 
 func (c *Client) handleSet(cmd *protocol.Command) {
-	if len(cmd.Args) < 2 {
-		c.writeError("ERR wrong number of arguments for 'set' command")
-		return
+	if c.server.redirectWrites {
+		c.redirectToMaster(cmd)
+	} else {
+		c.writeError("READONLY You can't write against a read only replica")
 	}
-
-	key := string(cmd.Args[0])
-	value := cmd.Args[1]
-
-	// TODO: Handle SET options (EX, PX, NX, XX, etc.)
-
-	err := c.server.storage.Set(key, value, nil)
-	if err != nil {
-		c.writeError(fmt.Sprintf("ERR %v", err))
-		return
-	}
-
-	c.writeString("OK")
 }
 
 func (c *Client) handleDel(cmd *protocol.Command) {
-	if len(cmd.Args) == 0 {
-		c.writeError("ERR wrong number of arguments for 'del' command")
-		return
+	if c.server.redirectWrites {
+		c.redirectToMaster(cmd)
+	} else {
+		c.writeError("READONLY You can't write against a read only replica")
 	}
-
-	keys := make([]string, len(cmd.Args))
-	for i, arg := range cmd.Args {
-		keys[i] = string(arg)
-	}
-
-	deleted := c.server.storage.Del(keys...)
-	c.writeInteger(deleted)
 }
 
 func (c *Client) handleExists(cmd *protocol.Command) {
@@ -522,6 +548,275 @@ func (c *Client) handleScript(cmd *protocol.Command) {
 	}
 }
 
+func (c *Client) handleMGet(cmd *protocol.Command) {
+	if len(cmd.Args) == 0 {
+		c.writeError("ERR wrong number of arguments for 'mget' command")
+		return
+	}
+
+	// Check if initial sync is completed
+	if c.server.syncMgr != nil && !c.server.syncMgr.IsInitialSyncCompleted() {
+		c.writeError("LOADING Redis is loading the dataset in memory")
+		return
+	}
+
+	values := make([]interface{}, len(cmd.Args))
+	for i, arg := range cmd.Args {
+		value, exists := c.server.storage.Get(string(arg))
+		if exists {
+			values[i] = string(value)
+		} else {
+			values[i] = nil
+		}
+	}
+	c.writeArray(values)
+}
+
+func (c *Client) handleTTL(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'ttl' command")
+		return
+	}
+
+	ttl := c.server.storage.TTL(string(cmd.Args[0]))
+	// Convert to seconds as Redis expects
+	seconds := int64(ttl.Seconds())
+	c.writeInteger(seconds)
+}
+
+func (c *Client) handlePTTL(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'pttl' command")
+		return
+	}
+
+	ttl := c.server.storage.PTTL(string(cmd.Args[0]))
+	// Convert to milliseconds as Redis expects
+	milliseconds := int64(ttl / time.Millisecond)
+	c.writeInteger(milliseconds)
+}
+
+func (c *Client) handleKeys(cmd *protocol.Command) {
+	if len(cmd.Args) != 1 {
+		c.writeError("ERR wrong number of arguments for 'keys' command")
+		return
+	}
+
+	pattern := string(cmd.Args[0])
+	matchingKeys := c.server.storage.Keys(pattern)
+	
+	// Convert to interface{} slice for writeArray
+	result := make([]interface{}, len(matchingKeys))
+	for i, key := range matchingKeys {
+		result[i] = key
+	}
+	
+	c.writeArray(result)
+}
+
+func (c *Client) handleScan(cmd *protocol.Command) {
+	if len(cmd.Args) < 1 {
+		c.writeError("ERR wrong number of arguments for 'scan' command")
+		return
+	}
+
+	cursor, err := strconv.ParseInt(string(cmd.Args[0]), 10, 64)
+	if err != nil {
+		c.writeError("ERR invalid cursor")
+		return
+	}
+
+	var pattern string
+	var count int64 = 10 // default count
+
+	// Parse optional arguments
+	for i := 1; i < len(cmd.Args); i++ {
+		arg := strings.ToUpper(string(cmd.Args[i]))
+		switch arg {
+		case "MATCH":
+			if i+1 >= len(cmd.Args) {
+				c.writeError("ERR syntax error")
+				return
+			}
+			pattern = string(cmd.Args[i+1])
+			i++
+		case "COUNT":
+			if i+1 >= len(cmd.Args) {
+				c.writeError("ERR syntax error")
+				return
+			}
+			count, err = strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil || count <= 0 {
+				c.writeError("ERR invalid count")
+				return
+			}
+			i++
+		}
+	}
+
+	newCursor, keys := c.server.storage.Scan(cursor, pattern, count)
+	
+	// Convert keys to interface slice
+	keyInterfaces := make([]interface{}, len(keys))
+	for i, key := range keys {
+		keyInterfaces[i] = key
+	}
+	
+	result := []interface{}{
+		strconv.FormatInt(newCursor, 10),
+		keyInterfaces,
+	}
+	c.writeArray(result)
+}
+
+func (c *Client) handleDBSize(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'dbsize' command")
+		return
+	}
+
+	size := c.server.storage.KeyCount()
+	c.writeInteger(size)
+}
+
+func (c *Client) handleInfo(cmd *protocol.Command) {
+	sections := []string{"all"}
+	if len(cmd.Args) > 0 {
+		sections = make([]string, len(cmd.Args))
+		for i, arg := range cmd.Args {
+			sections[i] = strings.ToLower(string(arg))
+		}
+	}
+
+	var info strings.Builder
+	
+	for _, section := range sections {
+		switch section {
+		case "all", "server":
+			info.WriteString("# Server\r\n")
+			info.WriteString("redis_version:7.0.0\r\n")
+			info.WriteString("redis_mode:replica\r\n")
+			info.WriteString("arch_bits:64\r\n")
+			info.WriteString("os:Linux\r\n")
+			info.WriteString("\r\n")
+		}
+		
+		if section == "all" || section == "replication" {
+			info.WriteString("# Replication\r\n")
+			info.WriteString("role:slave\r\n")
+			
+			if c.server.syncMgr != nil {
+				status := c.server.syncMgr.SyncStatus()
+				info.WriteString(fmt.Sprintf("master_host:%s\r\n", status.MasterHost))
+				
+				if status.Connected {
+					info.WriteString("master_link_status:up\r\n")
+				} else {
+					info.WriteString("master_link_status:down\r\n")
+				}
+				
+				// Calculate seconds since last sync
+				lastIO := int64(time.Since(status.LastSyncTime).Seconds())
+				info.WriteString(fmt.Sprintf("master_last_io_seconds_ago:%d\r\n", lastIO))
+				
+				if status.InitialSyncCompleted {
+					info.WriteString("master_sync_in_progress:0\r\n")
+				} else {
+					info.WriteString("master_sync_in_progress:1\r\n")
+				}
+				
+				info.WriteString(fmt.Sprintf("master_repl_offset:%d\r\n", status.ReplicationOffset))
+			} else {
+				info.WriteString("master_host:unknown\r\n")
+				info.WriteString("master_link_status:down\r\n")
+				info.WriteString("master_last_io_seconds_ago:-1\r\n")
+				info.WriteString("master_sync_in_progress:0\r\n")
+				info.WriteString("master_repl_offset:0\r\n")
+			}
+			info.WriteString("\r\n")
+		}
+		
+		if section == "all" || section == "memory" {
+			info.WriteString("# Memory\r\n")
+			memoryUsage := c.server.storage.MemoryUsage()
+			info.WriteString(fmt.Sprintf("used_memory:%d\r\n", memoryUsage))
+			info.WriteString(fmt.Sprintf("used_memory_human:%s\r\n", formatBytes(memoryUsage)))
+			info.WriteString("\r\n")
+		}
+	}
+
+	c.writeBulkString([]byte(strings.TrimSpace(info.String())))
+}
+
+func (c *Client) handleRole(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'role' command")
+		return
+	}
+
+	role := []interface{}{"slave"}
+	
+	if c.server.syncMgr != nil {
+		status := c.server.syncMgr.SyncStatus()
+		// Parse master host and port
+		parts := strings.Split(status.MasterHost, ":")
+		if len(parts) == 2 {
+			role = append(role, parts[0]) // host
+			if port, err := strconv.Atoi(parts[1]); err == nil {
+				role = append(role, int64(port)) // port
+			} else {
+				role = append(role, int64(6379)) // default port
+			}
+		} else {
+			role = append(role, status.MasterHost, int64(6379))
+		}
+		role = append(role, status.ReplicationOffset)
+	} else {
+		role = append(role, "unknown", int64(6379), int64(0))
+	}
+	
+	c.writeArray(role)
+}
+
+func (c *Client) handleCommand(cmd *protocol.Command) {
+	if len(cmd.Args) == 0 {
+		// Return number of commands supported
+		c.writeInteger(20) // Approximate count of supported commands
+		return
+	}
+
+	subCmd := strings.ToUpper(string(cmd.Args[0]))
+	switch subCmd {
+	case "DOCS":
+		// Simple stub - return empty array
+		c.writeArray([]interface{}{})
+	default:
+		c.writeError("ERR unknown COMMAND subcommand")
+	}
+}
+
+func (c *Client) handleReadOnly(cmd *protocol.Command) {
+	if len(cmd.Args) != 0 {
+		c.writeError("ERR wrong number of arguments for 'readonly' command")
+		return
+	}
+	c.writeString("OK")
+}
+
+// Helper function to format bytes in human readable format
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
 // Response writers
 
 func (c *Client) writeString(s string) {
@@ -615,5 +910,143 @@ func (c *Client) writeResult(result interface{}) {
 		c.writeArray(array)
 	default:
 		c.writeBulkString([]byte(fmt.Sprintf("%v", v)))
+	}
+}
+
+// redirectToMaster forwards a command to the master Redis server and returns the response
+func (c *Client) redirectToMaster(cmd *protocol.Command) {
+	if c.server.masterAddr == "" {
+		c.writeError("ERR master address not configured for write redirection")
+		return
+	}
+
+	// Connect to master
+	conn, err := net.DialTimeout("tcp", c.server.masterAddr, 5*time.Second)
+	if err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to connect to master: %v", err))
+		return
+	}
+	defer conn.Close()
+
+	// Set connection timeouts
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to set connection deadline: %v", err))
+		return
+	}
+
+	masterWriter := protocol.NewWriter(conn)
+	masterReader := protocol.NewReader(conn)
+
+	// Authenticate with master if password is set
+	if c.server.masterPassword != "" {
+		authCmd := &protocol.Command{
+			Name: "AUTH",
+			Args: [][]byte{[]byte(c.server.masterPassword)},
+		}
+		if err := c.writeCommandToMaster(masterWriter, authCmd); err != nil {
+			c.writeError(fmt.Sprintf("ERR failed to send auth to master: %v", err))
+			return
+		}
+
+		// Read auth response
+		resp, err := masterReader.ReadNext()
+		if err != nil {
+			c.writeError(fmt.Sprintf("ERR failed to read auth response: %v", err))
+			return
+		}
+		if resp.Type == protocol.TypeError {
+			c.writeError(string(resp.Data))
+			return
+		}
+	}
+
+	// Send the original command to master
+	if err := c.writeCommandToMaster(masterWriter, cmd); err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to send command to master: %v", err))
+		return
+	}
+
+	// Read response from master and forward to client
+	resp, err := masterReader.ReadNext()
+	if err != nil {
+		c.writeError(fmt.Sprintf("ERR failed to read response from master: %v", err))
+		return
+	}
+
+	// Forward the response to the client
+	c.forwardResponse(resp)
+}
+
+// writeCommandToMaster sends a command to the master server
+func (c *Client) writeCommandToMaster(writer *protocol.Writer, cmd *protocol.Command) error {
+	// Build command array
+	cmdArray := make([]protocol.Value, 1+len(cmd.Args))
+	cmdArray[0] = protocol.Value{Type: protocol.TypeBulkString, Data: []byte(cmd.Name)}
+	for i, arg := range cmd.Args {
+		cmdArray[i+1] = protocol.Value{Type: protocol.TypeBulkString, Data: arg}
+	}
+
+	if err := writer.WriteArray(cmdArray); err != nil {
+		return err
+	}
+	return writer.Flush()
+}
+
+// forwardResponse forwards a response from master to the client
+func (c *Client) forwardResponse(resp protocol.Value) {
+	switch resp.Type {
+	case protocol.TypeSimpleString:
+		c.writeString(string(resp.Data))
+	case protocol.TypeError:
+		c.writeError(string(resp.Data))
+	case protocol.TypeInteger:
+		c.writeInteger(resp.Integer)
+	case protocol.TypeBulkString:
+		if resp.IsNull {
+			c.writeNull()
+		} else {
+			c.writeBulkString(resp.Data)
+		}
+	case protocol.TypeArray:
+		if resp.IsNull {
+			c.writeNull()
+		} else {
+			// Convert protocol values to interface array for writeArray
+			array := make([]interface{}, len(resp.Array))
+			for i, val := range resp.Array {
+				array[i] = c.protocolValueToInterface(val)
+			}
+			c.writeArray(array)
+		}
+	default:
+		c.writeError("ERR unsupported response type from master")
+	}
+}
+
+// protocolValueToInterface converts a protocol.Value to interface{} for writeArray
+func (c *Client) protocolValueToInterface(val protocol.Value) interface{} {
+	switch val.Type {
+	case protocol.TypeSimpleString:
+		return string(val.Data)
+	case protocol.TypeError:
+		return fmt.Sprintf("ERR %s", string(val.Data))
+	case protocol.TypeInteger:
+		return val.Integer
+	case protocol.TypeBulkString:
+		if val.IsNull {
+			return nil
+		}
+		return val.Data
+	case protocol.TypeArray:
+		if val.IsNull {
+			return nil
+		}
+		array := make([]interface{}, len(val.Array))
+		for i, item := range val.Array {
+			array[i] = c.protocolValueToInterface(item)
+		}
+		return array
+	default:
+		return string(val.Data)
 	}
 }

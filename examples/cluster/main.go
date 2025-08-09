@@ -223,7 +223,7 @@ func demonstrateCrossReplicaOperations(manager *ReplicaManager) {
 		}
 
 		// Show all keys in this replica
-		allKeys := storage.Keys()
+		allKeys := storage.Keys("*")
 		if len(allKeys) > 0 {
 			fmt.Printf("   All keys: %v\n", allKeys)
 		} else {
