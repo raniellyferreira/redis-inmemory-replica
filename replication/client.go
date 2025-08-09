@@ -322,7 +322,24 @@ func (c *Client) run() {
 
 			// Start streaming replication
 			if err := c.streamCommands(); err != nil {
-				c.logger.Error("Streaming failed", "error", err)
+				// Check if we're stopping - if so, don't log connection errors as they're expected
+				select {
+				case <-c.stopChan:
+					return // Clean shutdown, don't log streaming errors during stop
+				default:
+				}
+
+				// Check for "use of closed network connection" during shutdown
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					select {
+					case <-c.stopChan:
+						return // Clean shutdown
+					default:
+						c.logger.Error("Streaming failed", "error", fmt.Errorf("connection unexpectedly closed: %w", err))
+					}
+				} else {
+					c.logger.Error("Streaming failed", "error", err)
+				}
 				c.recordMetricError("streaming")
 				c.disconnect()
 				continue
