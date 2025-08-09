@@ -53,7 +53,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 			// Benchmark the cleanup simulation
 			for i := 0; i < b.N; i++ {
 				// This simulates the old approach - check every key
-				s.Keys() // This will internally check all keys for expiration
+				s.Keys("*") // This will internally check all keys for expiration
 			}
 		})
 	}

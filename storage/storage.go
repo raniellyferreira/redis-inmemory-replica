@@ -19,7 +19,7 @@ type Storage interface {
 	PTTL(key string) time.Duration
 
 	// Key operations
-	Keys() []string
+	Keys(pattern string) []string
 	KeyCount() int64
 	FlushAll() error
 

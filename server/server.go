@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -584,17 +583,15 @@ func (c *Client) handleKeys(cmd *protocol.Command) {
 	}
 
 	pattern := string(cmd.Args[0])
-	allKeys := c.server.storage.Keys()
+	matchingKeys := c.server.storage.Keys(pattern)
 	
-	var matchingKeys []interface{}
-	for _, key := range allKeys {
-		matched, err := filepath.Match(pattern, key)
-		if err == nil && matched {
-			matchingKeys = append(matchingKeys, key)
-		}
+	// Convert to interface{} slice for writeArray
+	result := make([]interface{}, len(matchingKeys))
+	for i, key := range matchingKeys {
+		result[i] = key
 	}
 	
-	c.writeArray(matchingKeys)
+	c.writeArray(result)
 }
 
 func (c *Client) handleScan(cmd *protocol.Command) {

@@ -223,7 +223,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	t.Logf("  Replication offset: %d", status.ReplicationOffset)
 
 	// Verify we have all expected keys
-	allKeys := replicaStorage.Keys()
+	allKeys := replicaStorage.Keys("*")
 	t.Logf("Total keys in replica: %d", len(allKeys))
 	t.Logf("Keys: %v", allKeys)
 }
@@ -996,7 +996,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 
 	// Verify replication results
 	storage := replica.Storage()
-	replicatedKeys := storage.Keys()
+	replicatedKeys := storage.Keys("*")
 	
 	t.Logf("🔍 Verifying replication results:")
 	t.Logf("   Keys in replica: %d", len(replicatedKeys))
@@ -1411,7 +1411,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 
 	// Verify some operations completed
 	replicaStorage := replica.Storage()
-	if len(replicaStorage.Keys()) == 0 {
+	if len(replicaStorage.Keys("*")) == 0 {
 		b.Fatal("No keys replicated during benchmark")
 	}
 }

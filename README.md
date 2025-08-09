@@ -65,6 +65,12 @@ func main() {
     status := replica.SyncStatus()
     log.Printf("Sync completed: %v", status.InitialSyncCompleted)
 
+    // Access data directly through storage
+    storage := replica.Storage()
+    if value, exists := storage.Get("mykey"); exists {
+        log.Printf("Value: %s", value)
+    }
+
     // Connect Redis client to replica server
     client := redis.NewClient(&redis.Options{
         Addr: "localhost:6380",

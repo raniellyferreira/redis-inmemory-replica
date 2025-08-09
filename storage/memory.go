@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"path/filepath"
 	randv2 "math/rand/v2"
 	"runtime"
 	"sync"
@@ -246,17 +247,35 @@ func (s *MemoryStorage) PTTL(key string) time.Duration {
 	return time.Until(*value.Expiry)
 }
 
-// Keys returns all keys in the current database
-func (s *MemoryStorage) Keys() []string {
+// Keys returns all keys matching the pattern in the current database
+// Pattern supports glob-style patterns:
+// * matches any number of characters (including zero)
+// ? matches a single character
+// [abc] matches any character in the brackets
+// [a-z] matches any character in the range
+func (s *MemoryStorage) Keys(pattern string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	db := s.databases[s.currentDB]
-	keys := make([]string, 0, len(db.data))
+	keys := make([]string, 0)
 
+	// Handle empty or "*" pattern - return all keys
+	if pattern == "" || pattern == "*" {
+		for key, value := range db.data {
+			if !value.IsExpired() {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+
+	// Use filepath.Match for glob pattern matching
 	for key, value := range db.data {
 		if !value.IsExpired() {
-			keys = append(keys, key)
+			if matched, err := filepath.Match(pattern, key); err == nil && matched {
+				keys = append(keys, key)
+			}
 		}
 	}
 
