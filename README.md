@@ -564,10 +564,12 @@ Redis Master → RESP Protocol → RDB Parser → Storage Layer → Application
 
 ## Compatibility
 
-- **Redis Versions**: 5.0+ replication protocol
+- **Redis Versions**: 5.0+ replication protocol, **Enhanced Redis 7.x support**
 - **Go Versions**: 1.24.5+
 - **Redis Clients**: Compatible with `github.com/redis/go-redis` and others
 - **Platforms**: Linux, macOS, Windows
+
+
 
 ## Development
 
@@ -702,17 +704,6 @@ func (m *CustomMetrics) RecordCommandProcessed(cmd string, duration time.Duratio
 4. **Memory Issues**
    - Set appropriate memory limits with `WithMaxMemory`
    - Monitor memory usage with `GetInfo()`
-
-### Debug Logging
-
-Enable debug logging for troubleshooting:
-
-```go
-replica, err := redisreplica.New(
-    redisreplica.WithMaster("localhost:6379"),
-    redisreplica.WithLogger(debugLogger),  // Custom logger with debug enabled
-)
-```
 
 ## License
 

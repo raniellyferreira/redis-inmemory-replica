@@ -126,7 +126,7 @@ func TestRESPWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteSimpleString() error = %v", err)
 	}
-	writer.Flush()
+	_ = writer.Flush()
 
 	expected := "+OK\r\n"
 	if buf.String() != expected {
@@ -139,7 +139,7 @@ func TestRESPWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteBulkString() error = %v", err)
 	}
-	writer.Flush()
+	_ = writer.Flush()
 
 	expected = "$5\r\nhello\r\n"
 	if buf.String() != expected {
@@ -152,7 +152,7 @@ func TestRESPWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteInteger() error = %v", err)
 	}
-	writer.Flush()
+	_ = writer.Flush()
 
 	expected = ":42\r\n"
 	if buf.String() != expected {
@@ -165,7 +165,7 @@ func TestRESPWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteCommand() error = %v", err)
 	}
-	writer.Flush()
+	_ = writer.Flush()
 
 	expected = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"
 	if buf.String() != expected {
@@ -351,6 +351,6 @@ func BenchmarkRESPWriter(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		writer.Flush()
+		_ = writer.Flush()
 	}
 }

@@ -32,8 +32,8 @@ type Client struct {
 	connected bool
 
 	// Replication state
-	replID      string
-	replOffset  int64
+	replID     string
+	replOffset int64
 
 	// Control channels
 	ctx      context.Context
@@ -44,7 +44,7 @@ type Client struct {
 	runEnded int32 // atomic flag to prevent double doneChan close
 
 	// Sync control
-	syncing int32      // atomic flag indicating sync is in progress
+	syncing int32 // atomic flag indicating sync is in progress
 
 	// Statistics
 	stats *ReplicationStats
@@ -240,6 +240,9 @@ func (c *Client) Stop() error {
 	c.cancel()
 	close(c.stopChan)
 
+	// Force close connection to interrupt any blocking reads
+	c.disconnect()
+
 	select {
 	case <-c.doneChan:
 		return nil
@@ -307,7 +310,7 @@ func (c *Client) run() {
 				c.logger.Error("Sync failed", "error", err)
 				c.recordMetricError("sync")
 				c.disconnect()
-				
+
 				// Add backoff for sync failures to prevent tight loop
 				select {
 				case <-time.After(2 * time.Second):
@@ -319,7 +322,24 @@ func (c *Client) run() {
 
 			// Start streaming replication
 			if err := c.streamCommands(); err != nil {
-				c.logger.Error("Streaming failed", "error", err)
+				// Check if we're stopping - if so, don't log connection errors as they're expected
+				select {
+				case <-c.stopChan:
+					return // Clean shutdown, don't log streaming errors during stop
+				default:
+				}
+
+				// Check for "use of closed network connection" during shutdown
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					select {
+					case <-c.stopChan:
+						return // Clean shutdown
+					default:
+						c.logger.Error("Streaming failed", "error", fmt.Errorf("connection unexpectedly closed: %w", err))
+					}
+				} else {
+					c.logger.Error("Streaming failed", "error", err)
+				}
 				c.recordMetricError("streaming")
 				c.disconnect()
 				continue
@@ -352,7 +372,7 @@ func (c *Client) connect() error {
 
 	// Set connection timeouts with enhanced error handling
 	if err := c.setConnectionTimeouts(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("failed to set connection timeouts: %w", err)
 	}
 
@@ -388,7 +408,7 @@ func (c *Client) connect() error {
 func (c *Client) disconnect() {
 	c.mu.Lock()
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 		c.conn = nil
 	}
 	c.connected = false
@@ -453,7 +473,7 @@ func (c *Client) performSync() error {
 	// Parse PSYNC response - handle both string and bulk string responses
 	responseStr := response.String()
 	c.logger.Debug("PSYNC response received", "response", responseStr)
-	
+
 	parts := strings.Fields(responseStr)
 	if len(parts) < 3 {
 		return fmt.Errorf("invalid PSYNC response: %s", responseStr)
@@ -499,7 +519,7 @@ func (c *Client) performSync() error {
 	}
 
 	c.logger.Info("Initial synchronization completed", "duration", syncDuration)
-	
+
 	return nil
 }
 
@@ -558,30 +578,28 @@ func (c *Client) performFullSync() error {
 		// For compatibility with different Redis versions, log the error but don't fail completely
 		// This allows the replication to continue even if RDB parsing has issues
 		c.logger.Error("RDB parsing failed (non-fatal for empty databases)", "error", err)
-		
+
 		// If this is likely an empty database, just complete the sync
 		if rdbBuffer.totalSize < 500 { // Small RDB likely means empty or mostly empty
 			c.logger.Info("Assuming empty database due to small RDB size and parsing error")
 			c.logger.Debug("RDB parsing completed")
-			
+
 			return nil
 		}
-		
+
 		return fmt.Errorf("RDB parsing failed: %w", err)
 	}
 
-	c.logger.Debug("RDB parsing completed")
-	
 	// Note: Reader cleanup will be handled during connection establishment
 	// for command streaming to ensure proper synchronization
-	
+
 	return nil
 }
 
 // streamCommands streams replication commands
 func (c *Client) streamCommands() error {
 	c.logger.Debug("Starting command streaming")
-	
+
 	// Ensure reader state is clean for command streaming after RDB parsing
 	// This is critical to prevent protocol desynchronization
 	c.mu.Lock()
@@ -591,10 +609,10 @@ func (c *Client) streamCommands() error {
 		c.logger.Debug("Created fresh reader for command streaming")
 	}
 	c.mu.Unlock()
-	
+
 	// Add a brief stabilization delay after reader reset
 	time.Sleep(50 * time.Millisecond)
-	
+
 	protocolErrorCount := 0
 	maxProtocolErrors := 3 // Reduced threshold for faster reconnection
 	consecutiveSuccesses := 0
@@ -607,34 +625,53 @@ func (c *Client) streamCommands() error {
 			// Read next command with enhanced error handling
 			value, err := c.reader.ReadNext()
 			if err != nil {
+				// Check if we're stopping - if so, don't log connection errors as they're expected
+				select {
+				case <-c.stopChan:
+					return nil // Clean shutdown, connection closed during stop
+				default:
+				}
+
 				if err == io.EOF {
 					return fmt.Errorf("connection closed")
 				}
-				
+
+				// Check for "use of closed network connection" during shutdown
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					// Double-check if we're stopping to handle race condition
+					select {
+					case <-c.stopChan:
+						return nil // Clean shutdown
+					default:
+						// Not stopping, this is an unexpected connection closure
+						return fmt.Errorf("connection unexpectedly closed: %w", err)
+					}
+				}
+
 				// Handle protocol errors with categorization
 				if isProtocolError(err) {
 					protocolErrorCount++
 					consecutiveSuccesses = 0 // Reset success counter
-					
-					c.logger.Debug("Protocol error during streaming", 
-						"error", err, 
+
+					c.logger.Debug("Protocol error during streaming",
+						"error", err,
 						"count", protocolErrorCount,
 						"max", maxProtocolErrors)
-					
+
 					// If we get too many consecutive protocol errors, reconnect
 					if protocolErrorCount >= maxProtocolErrors {
-						c.logger.Error("Too many consecutive protocol errors, triggering reconnection", 
+						c.logger.Error("Too many consecutive protocol errors, triggering reconnection",
 							"count", protocolErrorCount,
 							"error", err)
 						return fmt.Errorf("protocol desynchronization detected after %d errors: %w", protocolErrorCount, err)
 					}
-					
+
 					// Add progressive delay for protocol errors
 					delay := time.Duration(protocolErrorCount) * 50 * time.Millisecond
 					if delay > 500*time.Millisecond {
 						delay = 500 * time.Millisecond
 					}
-					
+
 					select {
 					case <-time.After(delay):
 					case <-c.stopChan:
@@ -642,7 +679,7 @@ func (c *Client) streamCommands() error {
 					}
 					continue
 				}
-				
+
 				// For non-protocol errors, fail immediately
 				return fmt.Errorf("read command failed: %w", err)
 			}
@@ -674,8 +711,6 @@ func isProtocolError(err error) bool {
 		strings.Contains(errStr, "invalid length") ||
 		strings.Contains(errStr, "protocol error")
 }
-
-
 
 // processCommand processes a replication command
 func (c *Client) processCommand(value protocol.Value) error {
@@ -854,7 +889,7 @@ func (h *rdbStorageHandler) OnAux(key, value []byte) error {
 }
 
 func (h *rdbStorageHandler) OnEnd() error {
-	h.logger.Debug("RDB parsing completed")
+	// Don't log here since client already logs completion
 	return nil
 }
 
@@ -954,4 +989,3 @@ func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 
 	return nil
 }
-

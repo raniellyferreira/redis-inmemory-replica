@@ -23,11 +23,11 @@ type syncCoordinator struct {
 func (sc *syncCoordinator) tryAcquire(masterAddr string) bool {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	
+
 	if sc.activeSyncs[masterAddr] {
 		return false // Already active
 	}
-	
+
 	sc.activeSyncs[masterAddr] = true
 	return true
 }
@@ -136,7 +136,7 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 		sm.client.logger.Debug("Sync manager start already in progress, skipping duplicate Start call")
 		return nil
 	}
-	
+
 	defer atomic.StoreInt32(&sm.starting, 0)
 
 	// Try to acquire global sync lock for this master
@@ -145,7 +145,7 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 		sm.client.logger.Debug("Another sync manager is already active for this master, skipping")
 		return nil
 	}
-	
+
 	defer globalSyncCoordinator.release(masterAddr)
 
 	// Register sync completion callback
@@ -168,7 +168,7 @@ func (sm *SyncManager) Start(ctx context.Context) error {
 		if err := sm.client.Start(ctx); err != nil {
 			lastErr = err
 			sm.client.logger.Debug("Sync start attempt failed", "attempt", i+1, "error", err)
-			
+
 			if i < sm.maxRetries-1 {
 				select {
 				case <-time.After(sm.retryDelay):

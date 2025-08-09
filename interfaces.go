@@ -1,7 +1,9 @@
 package redisreplica
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -129,7 +131,17 @@ func formatValue(v interface{}) string {
 		return val
 	case error:
 		return val.Error()
+	case int:
+		return strconv.Itoa(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(val)
+	case time.Duration:
+		return val.String()
 	default:
-		return ""
+		return fmt.Sprintf("%v", v)
 	}
 }

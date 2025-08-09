@@ -129,7 +129,7 @@ func TestServer_BasicCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Test PING
 	resp, err := client.sendCommand("PING")
@@ -177,7 +177,7 @@ func TestServer_LuaScripts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Test simple EVAL
 	resp, err := client.sendCommand("EVAL", "return 'hello world'", "0")
@@ -268,7 +268,7 @@ func TestServer_ErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Test unknown command
 	resp, err := client.sendCommand("UNKNOWNCMD")
@@ -317,7 +317,7 @@ func TestServer_Stats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Send some commands
 	_, _ = client.sendCommand("PING")

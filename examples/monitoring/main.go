@@ -110,7 +110,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create replica:", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Setup monitoring callbacks
 	replica.OnSyncComplete(func() {

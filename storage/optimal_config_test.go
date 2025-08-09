@@ -13,7 +13,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping optimization test in short mode")
 	}
-	
+
 	// Simplified workloads for CI stability
 	workloads := []struct {
 		name         string
@@ -24,7 +24,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 		{"ModerateWorkload", 500, 0.3}, // Reduced from 1000
 	}
 
-	// Simplified configurations for CI stability  
+	// Simplified configurations for CI stability
 	configurations := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -38,7 +38,7 @@ func TestOptimalCleanupConfiguration(t *testing.T) {
 			for _, cfg := range configurations {
 				t.Run(cfg.name, func(t *testing.T) {
 					s := storage.NewMemory()
-					defer s.Close()
+					defer func() { _ = s.Close() }()
 
 					s.SetCleanupConfig(cfg.config)
 
@@ -134,7 +134,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping optimal configurations benchmark in short mode")
 	}
-	
+
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -150,7 +150,7 @@ func BenchmarkOptimalConfigurations(b *testing.B) {
 	for _, cfg := range configs {
 		b.Run(cfg.name, func(b *testing.B) {
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			s.SetCleanupConfig(cfg.config)
 
@@ -208,7 +208,7 @@ func TestRecommendedConfiguration(t *testing.T) {
 	recommendedConfig := storage.CleanupConfigDefault
 
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	s.SetCleanupConfig(recommendedConfig)
 
@@ -231,7 +231,7 @@ func TestRecommendedConfiguration(t *testing.T) {
 			if testing.Short() && scenario.keys > 100 {
 				t.Skip("Skipping slow test in short mode")
 			}
-			
+
 			// Clear previous data
 			_ = s.FlushAll()
 

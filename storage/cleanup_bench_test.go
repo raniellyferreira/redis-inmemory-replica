@@ -14,7 +14,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping long benchmark in short mode")
 	}
-	
+
 	scenarios := []struct {
 		name        string
 		totalKeys   int
@@ -29,7 +29,7 @@ func BenchmarkCleanupLegacy(b *testing.B) {
 			b.StopTimer()
 
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			// Disable the background cleanup for this test
 			now := time.Now()
@@ -64,7 +64,7 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping long benchmark in short mode")
 	}
-	
+
 	scenarios := []struct {
 		name        string
 		totalKeys   int
@@ -88,7 +88,7 @@ func BenchmarkCleanupIncremental(b *testing.B) {
 			b.StopTimer()
 
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			s.SetCleanupConfig(scenario.config)
 
@@ -126,9 +126,9 @@ func BenchmarkCleanupConcurrentAccess(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping concurrent benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Configure for frequent cleanup
 	s.SetCleanupConfig(storage.CleanupConfig{
@@ -182,7 +182,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping config optimization benchmark in short mode")
 	}
-	
+
 	configs := []struct {
 		name   string
 		config storage.CleanupConfig
@@ -204,7 +204,7 @@ func BenchmarkCleanupConfigOptimization(b *testing.B) {
 	for _, cfg := range configs {
 		b.Run(cfg.name, func(b *testing.B) {
 			s := storage.NewMemory()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			s.SetCleanupConfig(cfg.config)
 
@@ -247,9 +247,9 @@ func BenchmarkMemoryUsageCleanup(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping memory usage benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Configure for efficient cleanup
 	s.SetCleanupConfig(storage.CleanupConfig{
@@ -287,9 +287,9 @@ func BenchmarkCleanupLatency(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping latency benchmark in short mode")
 	}
-	
+
 	s := storage.NewMemory()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Setup with many keys
 	now := time.Now()

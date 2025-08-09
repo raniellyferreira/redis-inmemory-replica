@@ -20,7 +20,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create replica:", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	// Register callback for sync completion
 	replica.OnSyncComplete(func() {

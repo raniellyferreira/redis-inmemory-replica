@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create replica:", err)
 	}
-	defer replica.Close()
+	defer func() { _ = replica.Close() }()
 
 	fmt.Println("📊 Configuration:")
 	fmt.Printf("  Master: %s\n", masterAddr)
@@ -92,7 +92,7 @@ func main() {
 
 	// Try to read from different databases
 	for db := 0; db < 4; db++ {
-		storage.SelectDB(db)
+		_ = storage.SelectDB(db)
 		keys := storage.Keys()
 
 		if len(keys) > 0 {
