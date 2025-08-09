@@ -201,12 +201,15 @@ func (sm *SyncManager) WaitForSync(ctx context.Context) error {
 	}
 	sm.mu.RUnlock()
 
-	// Wait for sync completion
+	// Wait for sync completion using safe channel close pattern
 	syncDone := make(chan struct{})
+	var once sync.Once
 
 	sm.mu.Lock()
 	sm.syncCallbacks = append(sm.syncCallbacks, func() {
-		close(syncDone)
+		once.Do(func() {
+			close(syncDone)
+		})
 	})
 	sm.mu.Unlock()
 

@@ -97,6 +97,106 @@ type MetricsCollector interface {
 	RecordError(errorType string)
 }
 
+// RDBLoadStats tracks RDB loading statistics and manages batched logging
+type RDBLoadStats struct {
+	StartTime     time.Time
+	TotalKeys     int64
+	ProcessedKeys int64
+	ErrorCount    int64
+	DatabaseStats map[int]*DatabaseStats
+	BatchSize     int
+	LastLogTime   time.Time
+	LogInterval   time.Duration
+	mu            sync.Mutex
+}
+
+// DatabaseStats tracks statistics for a specific database
+type DatabaseStats struct {
+	Keys       int64
+	TypeCounts map[string]int64
+	ErrorCount int64
+}
+
+// NewRDBLoadStats creates a new RDB load statistics tracker
+func NewRDBLoadStats() *RDBLoadStats {
+	return &RDBLoadStats{
+		StartTime:     time.Now(),
+		DatabaseStats: make(map[int]*DatabaseStats),
+		BatchSize:     100,  // Log every 100 keys by default
+		LogInterval:   2 * time.Second, // Or every 2 seconds
+		LastLogTime:   time.Now(),
+	}
+}
+
+// RecordKey records a processed key and logs progress if needed
+func (stats *RDBLoadStats) RecordKey(db int, keyType string, logger Logger) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	stats.ProcessedKeys++
+	
+	// Initialize database stats if needed
+	if stats.DatabaseStats[db] == nil {
+		stats.DatabaseStats[db] = &DatabaseStats{
+			TypeCounts: make(map[string]int64),
+		}
+	}
+	
+	dbStats := stats.DatabaseStats[db]
+	dbStats.Keys++
+	dbStats.TypeCounts[keyType]++
+
+	// Check if we should log progress
+	now := time.Now()
+	shouldLog := stats.ProcessedKeys%int64(stats.BatchSize) == 0 || 
+				now.Sub(stats.LastLogTime) >= stats.LogInterval
+
+	if shouldLog {
+		stats.LastLogTime = now
+		stats.logProgress(logger)
+	}
+}
+
+// RecordError records an error during RDB processing
+func (stats *RDBLoadStats) RecordError(db int) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+	
+	stats.ErrorCount++
+	if stats.DatabaseStats[db] != nil {
+		stats.DatabaseStats[db].ErrorCount++
+	}
+}
+
+// LogFinal logs final RDB loading statistics
+func (stats *RDBLoadStats) LogFinal(logger Logger) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+	stats.logProgress(logger)
+}
+
+// logProgress logs current progress (internal method, must be called with mutex held)
+func (stats *RDBLoadStats) logProgress(logger Logger) {
+	elapsed := time.Since(stats.StartTime)
+	rate := float64(stats.ProcessedKeys) / elapsed.Seconds()
+	
+	for db, dbStats := range stats.DatabaseStats {
+		// Build type distribution string
+		typeInfo := make([]string, 0, len(dbStats.TypeCounts))
+		for typeName, count := range dbStats.TypeCounts {
+			typeInfo = append(typeInfo, fmt.Sprintf("%s:%d", typeName, count))
+		}
+		
+		logger.Info("RDB load progress", 
+			"db", db,
+			"keys", dbStats.Keys,
+			"types", strings.Join(typeInfo, ","),
+			"total_processed", stats.ProcessedKeys,
+			"elapsed", elapsed.Round(100*time.Millisecond),
+			"rate", fmt.Sprintf("%.0f keys/s", rate))
+	}
+}
+
 // NewClient creates a new replication client
 func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -475,11 +575,14 @@ func (c *Client) performSync() error {
 	c.logger.Debug("PSYNC response received", "response", responseStr)
 
 	parts := strings.Fields(responseStr)
-	if len(parts) < 3 {
+	if len(parts) < 1 {
 		return fmt.Errorf("invalid PSYNC response: %s", responseStr)
 	}
 
 	if parts[0] == "FULLRESYNC" {
+		if len(parts) < 3 {
+			return fmt.Errorf("invalid FULLRESYNC response: %s", responseStr)
+		}
 		c.replID = parts[1]
 		offset, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil {
@@ -493,6 +596,11 @@ func (c *Client) performSync() error {
 		if err := c.performFullSync(); err != nil {
 			return err
 		}
+	} else if parts[0] == "CONTINUE" {
+		// Partial resync successful - no RDB transfer needed
+		c.logger.Info("Partial resync successful - continuing replication stream")
+		// The master will start sending incremental commands directly
+		// No need to perform full sync
 	} else {
 		return fmt.Errorf("unsupported PSYNC response: %s", responseStr)
 	}
@@ -523,11 +631,26 @@ func (c *Client) performSync() error {
 	return nil
 }
 
-// sendPSYNC sends PSYNC command
+// sendPSYNC sends PSYNC command - attempts partial sync if possible
 func (c *Client) sendPSYNC() error {
-	// For initial sync, use PSYNC ? -1
-	if err := c.writer.WriteCommand("PSYNC", "?", "-1"); err != nil {
-		return err
+	// If we have a valid replication ID and offset, attempt partial sync
+	c.mu.RLock()
+	replID := c.replID
+	replOffset := c.replOffset
+	c.mu.RUnlock()
+
+	if replID != "" && replOffset > 0 {
+		// Attempt partial sync using saved replication state
+		c.logger.Debug("Attempting partial sync", "repl_id", replID, "offset", replOffset)
+		if err := c.writer.WriteCommand("PSYNC", replID, fmt.Sprintf("%d", replOffset)); err != nil {
+			return err
+		}
+	} else {
+		// For initial sync, use PSYNC ? -1
+		c.logger.Debug("Attempting full sync (no previous replication state)")
+		if err := c.writer.WriteCommand("PSYNC", "?", "-1"); err != nil {
+			return err
+		}
 	}
 	return c.writer.Flush()
 }
@@ -536,11 +659,15 @@ func (c *Client) sendPSYNC() error {
 func (c *Client) performFullSync() error {
 	c.logger.Debug("Performing full sync")
 
+	// Create RDB load statistics tracker
+	stats := NewRDBLoadStats()
+
 	// Create RDB handler
 	handler := &rdbStorageHandler{
 		storage:   c.storage,
 		logger:    c.logger,
 		databases: c.databases,
+		stats:     stats,
 	}
 
 	// Create RDB stream reader that collects chunks
@@ -548,6 +675,9 @@ func (c *Client) performFullSync() error {
 		chunks: make([][]byte, 0),
 		logger: c.logger,
 	}
+
+	// Create chunk aggregator for batched logging
+	chunkAgg := newRDBChunkAggregator(c.logger)
 
 	// Read RDB data as streaming bulk string
 	c.logger.Debug("Reading RDB data stream")
@@ -557,7 +687,8 @@ func (c *Client) performFullSync() error {
 			return nil
 		}
 
-		c.logger.Debug("Received RDB chunk", "size", len(chunk))
+		// Record chunk for aggregated logging
+		chunkAgg.addChunk(len(chunk))
 
 		// Copy chunk to avoid buffer reuse issues
 		chunkCopy := make([]byte, len(chunk))
@@ -571,7 +702,8 @@ func (c *Client) performFullSync() error {
 		return fmt.Errorf("failed to read RDB data: %w", err)
 	}
 
-	c.logger.Debug("RDB data reading completed", "totalSize", rdbBuffer.totalSize, "chunks", len(rdbBuffer.chunks))
+	// Log final chunk statistics
+	chunkAgg.logFinal()
 
 	// Parse RDB from collected buffer
 	if err := ParseRDB(rdbBuffer, handler); err != nil {
@@ -607,6 +739,14 @@ func (c *Client) streamCommands() error {
 		// Create a new reader to ensure clean state
 		c.reader = protocol.NewReader(c.conn)
 		c.logger.Debug("Created fresh reader for command streaming")
+
+		// Remove read timeout during streaming phase to allow indefinite waiting
+		// Redis replication streams can be idle for long periods, this is normal behavior
+		if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+			c.mu.Unlock()
+			return fmt.Errorf("failed to remove read timeout for streaming: %w", err)
+		}
+		c.logger.Debug("Removed read timeout for replication streaming")
 	}
 	c.mu.Unlock()
 
@@ -842,6 +982,7 @@ type rdbStorageHandler struct {
 	logger    Logger
 	databases map[int]struct{} // Which databases to replicate (empty = all)
 	currentDB int
+	stats     *RDBLoadStats
 }
 
 func (h *rdbStorageHandler) OnDatabase(index int) error {
@@ -861,24 +1002,39 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 	// Skip key if current database is not allowed
 	if len(h.databases) > 0 {
 		if _, allowed := h.databases[h.currentDB]; !allowed {
-			h.logger.Debug("Skipping key in non-replicated database", "key", string(key), "db", h.currentDB)
 			return nil // Skip key in non-replicated database
 		}
 	}
 
-	h.logger.Debug("Processing RDB key", "key", string(key), "type", fmt.Sprintf("%T", value), "db", h.currentDB)
+	// Determine key type for statistics
+	var keyType string
+	switch value.(type) {
+	case []byte:
+		keyType = "string"
+	case map[string][]byte:
+		keyType = "hash"
+	case [][]byte:
+		keyType = "list"
+	case map[string]struct{}:
+		keyType = "set"
+	default:
+		keyType = fmt.Sprintf("%T", value)
+	}
+
+	// Record key processing for statistics and batched logging
+	h.stats.RecordKey(h.currentDB, keyType, h.logger)
 
 	switch v := value.(type) {
 	case []byte:
 		err := h.storage.Set(string(key), v, expiry)
 		if err != nil {
 			h.logger.Error("Failed to set key in storage", "key", string(key), "error", err)
+			h.stats.RecordError(h.currentDB)
 			return err
 		}
-		h.logger.Debug("Successfully stored RDB key", "key", string(key), "value_len", len(v))
 		return nil
 	default:
-		h.logger.Debug("Unsupported RDB value type", "key", string(key), "type", fmt.Sprintf("%T", value))
+		h.logger.Debug("Unsupported RDB value type", "key", string(key), "type", keyType)
 		return nil
 	}
 }
@@ -889,8 +1045,57 @@ func (h *rdbStorageHandler) OnAux(key, value []byte) error {
 }
 
 func (h *rdbStorageHandler) OnEnd() error {
-	// Don't log here since client already logs completion
+	// Log final statistics
+	h.stats.LogFinal(h.logger)
 	return nil
+}
+
+// rdbChunkAggregator tracks RDB chunk statistics for aggregated logging
+type rdbChunkAggregator struct {
+	chunkCount    int
+	totalSize     int
+	startTime     time.Time
+	logger        Logger
+	logThreshold  int // Log every N chunks
+	sizeThreshold int // Log when size reaches this threshold
+}
+
+// newRDBChunkAggregator creates a new chunk aggregator
+func newRDBChunkAggregator(logger Logger) *rdbChunkAggregator {
+	return &rdbChunkAggregator{
+		startTime:     time.Now(),
+		logger:        logger,
+		logThreshold:  10,    // Log every 10 chunks by default
+		sizeThreshold: 50000, // Log every 50KB by default
+	}
+}
+
+// addChunk records a chunk and logs if threshold is reached
+func (agg *rdbChunkAggregator) addChunk(size int) {
+	agg.chunkCount++
+	agg.totalSize += size
+	
+	// Log every N chunks or if we've received a significant amount of data
+	if agg.chunkCount%agg.logThreshold == 0 || agg.totalSize%agg.sizeThreshold == 0 {
+		elapsed := time.Since(agg.startTime)
+		rate := float64(agg.totalSize) / elapsed.Seconds()
+		agg.logger.Debug("RDB chunk progress", 
+			"chunks", agg.chunkCount,
+			"totalSize", agg.totalSize,
+			"elapsed", elapsed.Round(10*time.Millisecond),
+			"rate", fmt.Sprintf("%.1f KB/s", rate/1024))
+	}
+}
+
+// logFinal logs final chunk statistics
+func (agg *rdbChunkAggregator) logFinal() {
+	elapsed := time.Since(agg.startTime)
+	rate := float64(agg.totalSize) / elapsed.Seconds()
+	agg.logger.Debug("RDB data reading completed", 
+		"totalSize", agg.totalSize, 
+		"chunks", agg.chunkCount,
+		"elapsed", elapsed.Round(10*time.Millisecond),
+		"rate", fmt.Sprintf("%.1f KB/s", rate/1024))
 }
 
 // rdbStreamBuffer collects RDB data chunks and provides a Reader interface
@@ -956,10 +1161,12 @@ func (l *defaultLogger) Error(msg string, fields ...interface{}) {
 }
 
 // setConnectionTimeouts sets enhanced connection timeouts with improved error handling
+// These timeouts are applied during connection establishment, authentication, and sync phases.
+// The read timeout will be removed during the streaming phase to allow indefinite waiting.
 func (c *Client) setConnectionTimeouts(conn net.Conn) error {
 	now := time.Now()
 
-	// Set read timeout with validation
+	// Set read timeout with validation - used for handshake/sync phases
 	if c.readTimeout > 0 {
 		if c.readTimeout < time.Millisecond {
 			return fmt.Errorf("read timeout too small: %v (minimum: 1ms)", c.readTimeout)
