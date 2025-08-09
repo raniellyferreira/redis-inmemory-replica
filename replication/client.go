@@ -97,6 +97,105 @@ type MetricsCollector interface {
 	RecordError(errorType string)
 }
 
+// RDBLoadStats tracks RDB loading statistics and manages batched logging
+type RDBLoadStats struct {
+	StartTime     time.Time
+	TotalKeys     int64
+	ProcessedKeys int64
+	ErrorCount    int64
+	DatabaseStats map[int]*DatabaseStats
+	BatchSize     int
+	LastLogTime   time.Time
+	LogInterval   time.Duration
+	mu            sync.Mutex
+}
+
+// DatabaseStats tracks statistics for a specific database
+type DatabaseStats struct {
+	Keys       int64
+	TypeCounts map[string]int64
+	ErrorCount int64
+}
+
+// NewRDBLoadStats creates a new RDB load statistics tracker
+func NewRDBLoadStats() *RDBLoadStats {
+	return &RDBLoadStats{
+		StartTime:     time.Now(),
+		DatabaseStats: make(map[int]*DatabaseStats),
+		BatchSize:     100,  // Log every 100 keys by default
+		LogInterval:   2 * time.Second, // Or every 2 seconds
+		LastLogTime:   time.Now(),
+	}
+}
+
+// RecordKey records a processed key and logs progress if needed
+func (stats *RDBLoadStats) RecordKey(db int, keyType string, logger Logger) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	stats.ProcessedKeys++
+	
+	// Initialize database stats if needed
+	if stats.DatabaseStats[db] == nil {
+		stats.DatabaseStats[db] = &DatabaseStats{
+			TypeCounts: make(map[string]int64),
+		}
+	}
+	
+	dbStats := stats.DatabaseStats[db]
+	dbStats.Keys++
+	dbStats.TypeCounts[keyType]++
+
+	// Check if we should log progress
+	shouldLog := stats.ProcessedKeys%int64(stats.BatchSize) == 0 || 
+				time.Since(stats.LastLogTime) >= stats.LogInterval
+
+	if shouldLog {
+		stats.logProgress(logger)
+		stats.LastLogTime = time.Now()
+	}
+}
+
+// RecordError records an error during RDB processing
+func (stats *RDBLoadStats) RecordError(db int) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+	
+	stats.ErrorCount++
+	if stats.DatabaseStats[db] != nil {
+		stats.DatabaseStats[db].ErrorCount++
+	}
+}
+
+// LogFinal logs final RDB loading statistics
+func (stats *RDBLoadStats) LogFinal(logger Logger) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+	stats.logProgress(logger)
+}
+
+// logProgress logs current progress (internal method, must be called with mutex held)
+func (stats *RDBLoadStats) logProgress(logger Logger) {
+	elapsed := time.Since(stats.StartTime)
+	rate := float64(stats.ProcessedKeys) / elapsed.Seconds()
+	
+	for db, dbStats := range stats.DatabaseStats {
+		// Build type distribution string
+		typeInfo := make([]string, 0, len(dbStats.TypeCounts))
+		for typeName, count := range dbStats.TypeCounts {
+			typeInfo = append(typeInfo, fmt.Sprintf("%s:%d", typeName, count))
+		}
+		
+		logger.Info("RDB load progress", 
+			"db", db,
+			"keys", dbStats.Keys,
+			"types", strings.Join(typeInfo, ","),
+			"total_processed", stats.ProcessedKeys,
+			"elapsed", elapsed.Round(100*time.Millisecond),
+			"rate", fmt.Sprintf("%.0f keys/s", rate))
+	}
+}
+
 // NewClient creates a new replication client
 func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -536,11 +635,15 @@ func (c *Client) sendPSYNC() error {
 func (c *Client) performFullSync() error {
 	c.logger.Debug("Performing full sync")
 
+	// Create RDB load statistics tracker
+	stats := NewRDBLoadStats()
+
 	// Create RDB handler
 	handler := &rdbStorageHandler{
 		storage:   c.storage,
 		logger:    c.logger,
 		databases: c.databases,
+		stats:     stats,
 	}
 
 	// Create RDB stream reader that collects chunks
@@ -842,6 +945,7 @@ type rdbStorageHandler struct {
 	logger    Logger
 	databases map[int]struct{} // Which databases to replicate (empty = all)
 	currentDB int
+	stats     *RDBLoadStats
 }
 
 func (h *rdbStorageHandler) OnDatabase(index int) error {
@@ -861,24 +965,39 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 	// Skip key if current database is not allowed
 	if len(h.databases) > 0 {
 		if _, allowed := h.databases[h.currentDB]; !allowed {
-			h.logger.Debug("Skipping key in non-replicated database", "key", string(key), "db", h.currentDB)
 			return nil // Skip key in non-replicated database
 		}
 	}
 
-	h.logger.Debug("Processing RDB key", "key", string(key), "type", fmt.Sprintf("%T", value), "db", h.currentDB)
+	// Determine key type for statistics
+	var keyType string
+	switch value.(type) {
+	case []byte:
+		keyType = "string"
+	case map[string][]byte:
+		keyType = "hash"
+	case [][]byte:
+		keyType = "list"
+	case map[string]struct{}:
+		keyType = "set"
+	default:
+		keyType = fmt.Sprintf("%T", value)
+	}
+
+	// Record key processing for statistics and batched logging
+	h.stats.RecordKey(h.currentDB, keyType, h.logger)
 
 	switch v := value.(type) {
 	case []byte:
 		err := h.storage.Set(string(key), v, expiry)
 		if err != nil {
 			h.logger.Error("Failed to set key in storage", "key", string(key), "error", err)
+			h.stats.RecordError(h.currentDB)
 			return err
 		}
-		h.logger.Debug("Successfully stored RDB key", "key", string(key), "value_len", len(v))
 		return nil
 	default:
-		h.logger.Debug("Unsupported RDB value type", "key", string(key), "type", fmt.Sprintf("%T", value))
+		h.logger.Debug("Unsupported RDB value type", "key", string(key), "type", keyType)
 		return nil
 	}
 }
@@ -889,7 +1008,8 @@ func (h *rdbStorageHandler) OnAux(key, value []byte) error {
 }
 
 func (h *rdbStorageHandler) OnEnd() error {
-	// Don't log here since client already logs completion
+	// Log final statistics
+	h.stats.LogFinal(h.logger)
 	return nil
 }
 
