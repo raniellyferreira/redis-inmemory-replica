@@ -31,6 +31,14 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	t.Logf("Running end-to-end test with Redis at %s", redisAddr)
 
+	// Track test success
+	testsPassed := true
+	defer func() {
+		if testsPassed {
+			t.Log("✅ All end-to-end tests passed successfully!")
+		}
+	}()
+
 	// Clear any existing data in Redis
 	if err := clearRedisWithAuth(redisAddr, redisPassword); err != nil {
 		t.Fatalf("Failed to clear Redis: %v", err)
@@ -101,6 +109,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	for key, value := range testKeys {
 		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 			t.Errorf("Failed to set key %s: %v", key, err)
+			testsPassed = false
 		}
 	}
 
@@ -113,8 +122,10 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	for key, expectedValue := range testKeys {
 		if value, exists := storage.Get(key); !exists {
 			t.Errorf("Key %s not found in replica", key)
+			testsPassed = false
 		} else if string(value) != expectedValue {
 			t.Errorf("Key %s: expected %s, got %s", key, expectedValue, string(value))
+			testsPassed = false
 		} else {
 			t.Logf("✅ Key %s correctly replicated: %s", key, string(value))
 		}
@@ -122,8 +133,9 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	// Test 2: Delete keys and verify deletion is replicated
 	t.Log("Test 2: Deleting keys in Redis master")
-	if err := deleteRedisKey(redisAddr, "test:key1"); err != nil {
+	if err := deleteRedisKeyWithAuth(redisAddr, redisPassword, "test:key1"); err != nil {
 		t.Errorf("Failed to delete key test:key1: %v", err)
+		testsPassed = false
 	}
 
 	// Give some time for replication
@@ -144,6 +156,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	if !deleted {
 		t.Error("Key test:key1 should have been deleted from replica but still exists")
+		testsPassed = false
 	} else {
 		t.Log("✅ Key deletion correctly replicated")
 	}
@@ -155,6 +168,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 
 	if err := setRedisKeyWithAuth(redisAddr, redisPassword, "large:value", largeValue); err != nil {
 		t.Errorf("Failed to set large value: %v", err)
+		testsPassed = false
 	}
 
 	// Give some time for replication
@@ -164,8 +178,10 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	replicaStorage = replica.Storage()
 	if value, exists := replicaStorage.Get("large:value"); !exists {
 		t.Error("Large value not found in replica")
+		testsPassed = false
 	} else if len(value) != 1024 {
 		t.Errorf("Large value: expected length 1024, got %d", len(value))
+		testsPassed = false
 	} else {
 		t.Log("✅ Large value correctly replicated")
 	}
@@ -177,6 +193,7 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		value := fmt.Sprintf("value_%d", i)
 		if err := setRedisKeyWithAuth(redisAddr, redisPassword, key, value); err != nil {
 			t.Errorf("Failed to set rapid update key %s: %v", key, err)
+			testsPassed = false
 		}
 	}
 
@@ -190,8 +207,10 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 		expectedValue := fmt.Sprintf("value_%d", i)
 		if value, exists := replicaStorage.Get(key); !exists {
 			t.Errorf("Rapid update key %s not found in replica", key)
+			testsPassed = false
 		} else if string(value) != expectedValue {
 			t.Errorf("Rapid update key %s: expected %s, got %s", key, expectedValue, string(value))
+			testsPassed = false
 		}
 	}
 	t.Log("✅ Rapid updates correctly replicated")
@@ -207,9 +226,6 @@ func TestEndToEndWithRealRedis(t *testing.T) {
 	allKeys := replicaStorage.Keys()
 	t.Logf("Total keys in replica: %d", len(allKeys))
 	t.Logf("Keys: %v", allKeys)
-
-	// Test completed successfully
-	t.Log("✅ All end-to-end tests passed successfully!")
 }
 
 // TestRDBParsingRobustness tests RDB parsing with various scenarios
