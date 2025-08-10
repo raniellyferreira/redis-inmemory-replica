@@ -107,7 +107,7 @@ func demonstrateStorageAccess(replica *redisreplica.Replica) {
 	}
 
 	// Show all keys
-	allKeys := storage.Keys()
+	allKeys := storage.Keys("*")
 	if len(allKeys) > 0 {
 		fmt.Printf("   All keys (%d): %v\n", len(allKeys), allKeys)
 	} else {

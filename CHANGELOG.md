@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-08-09
+
+### Added
+- **Production-ready Redis server** that automatically starts when `WithReplicaAddr()` is provided
+- **Complete RESP2 protocol support** for read operations and auxiliary commands
+- **Enhanced Redis command support**:
+  - `MGET` - Multiple key retrieval
+  - `TTL/PTTL` - Time to live in seconds/milliseconds
+  - `INFO` - Server and replication information with sections (server, replication, memory)
+  - `ROLE` - Replication role information (returns `["slave", master_host, master_port, offset]`)
+  - `KEYS pattern` - Key pattern matching with glob-style patterns
+  - `SCAN cursor [MATCH pattern] [COUNT n]` - Cursor-based key iteration
+  - `DBSIZE` - Number of keys in current database
+  - `COMMAND` - Command documentation stub
+  - `READONLY` - Read-only mode acknowledgment
+- **READONLY error responses** for write commands (`SET`, `DEL`, etc.) with message "READONLY You can't write against a read only replica"
+- **LOADING error responses** for read commands before initial sync completion with message "LOADING Redis is loading the dataset in memory"
+- **Graceful server shutdown** integrated with `Replica.Close()`
+- **Concurrent client support** with thread-safe operations
+- **Comprehensive integration tests** using `github.com/redis/go-redis/v9`
+- **Enhanced storage interface** with `PTTL()` method for millisecond precision TTL
+- **Enhanced sync manager** with `IsInitialSyncCompleted()` method
+- **Write command redirection** with `WithWriteRedirection(enabled bool)` option to optionally redirect write commands (`SET`, `DEL`, etc.) to master instead of returning READONLY errors
+
+### Changed
+- **BREAKING**: Server now starts automatically when `WithReplicaAddr()` is provided - no separate configuration needed
+- **BREAKING**: Default replica address is now empty (no default `:6380` address)
+- **Server startup is non-blocking** - replica server starts even if master connection fails
+- **Improved error handling** for protocol errors and command validation
+
+### Removed
+- **BREAKING**: `enableServer` configuration field and `WithServerEnabled()` option removed
+- **BREAKING**: Manual server configuration no longer needed
+
+### Fixed
+- Server initialization race conditions
+- Memory leaks in concurrent client handling
+- Protocol error handling for malformed commands
+
+## [1.2.0] - 2025-08-08
+
+### Added
+- Complete Redis 7.x compatibility with LZF decompression, enhanced RDB parsing, comprehensive code quality improvements, robust authentication handling, and reliable shutdown process
+- Implement batched RDB logging, improve PSYNC reconnection logic, and resolve streaming timeout errors
+
 ## [1.1.0] - 2025-07-31
 
 ### Added

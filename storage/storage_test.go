@@ -177,7 +177,7 @@ func TestMemoryStorageKeys(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	// Initially no keys
-	keys := s.Keys()
+	keys := s.Keys("*")
 	if len(keys) != 0 {
 		t.Errorf("Keys() length = %d, want 0", len(keys))
 	}
@@ -187,7 +187,7 @@ func TestMemoryStorageKeys(t *testing.T) {
 	_ = s.Set("key2", []byte("value2"), nil)
 	_ = s.Set("key3", []byte("value3"), nil)
 
-	keys = s.Keys()
+	keys = s.Keys("*")
 	if len(keys) != 3 {
 		t.Errorf("Keys() length = %d, want 3", len(keys))
 	}
@@ -214,7 +214,7 @@ func TestMemoryStorageFlushAll(t *testing.T) {
 	}
 
 	// Verify all keys are gone
-	keys := s.Keys()
+	keys := s.Keys("*")
 	if len(keys) != 0 {
 		t.Errorf("Keys() length after FlushAll = %d, want 0", len(keys))
 	}

@@ -246,6 +246,13 @@ func (sm *SyncManager) SyncStatus() SyncStatus {
 	}
 }
 
+// IsInitialSyncCompleted returns true if initial sync is completed
+func (sm *SyncManager) IsInitialSyncCompleted() bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.initialSyncDone
+}
+
 // OnSyncComplete registers a callback for when initial sync completes
 func (sm *SyncManager) OnSyncComplete(fn func()) {
 	sm.mu.Lock()

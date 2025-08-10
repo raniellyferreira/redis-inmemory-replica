@@ -224,17 +224,57 @@ func (s *MemoryStorage) TTL(key string) time.Duration {
 	return time.Until(*value.Expiry)
 }
 
-// Keys returns all keys in the current database
-func (s *MemoryStorage) Keys() []string {
+// PTTL returns the time to live for a key in milliseconds
+func (s *MemoryStorage) PTTL(key string) time.Duration {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	db := s.databases[s.currentDB]
-	keys := make([]string, 0, len(db.data))
+	value, exists := db.data[key]
+	if !exists {
+		return -2 * time.Millisecond // Key doesn't exist
+	}
 
+	if value.IsExpired() {
+		return -2 * time.Millisecond // Key expired
+	}
+
+	if value.Expiry == nil {
+		return -1 * time.Millisecond // No expiration
+	}
+
+	return time.Until(*value.Expiry)
+}
+
+// Keys returns all keys matching the pattern in the current database
+// Pattern supports glob-style patterns:
+// * matches any number of characters (including zero)
+// ? matches a single character
+// [abc] matches any character in the brackets
+// [a-z] matches any character in the range
+func (s *MemoryStorage) Keys(pattern string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	db := s.databases[s.currentDB]
+	keys := make([]string, 0)
+
+	// Handle empty or "*" pattern - return all keys
+	if pattern == "" || pattern == "*" {
+		for key, value := range db.data {
+			if !value.IsExpired() {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+
+	// Use pattern matching system for consistent pattern support
 	for key, value := range db.data {
 		if !value.IsExpired() {
-			keys = append(keys, key)
+			if matchPattern(key, pattern) {
+				keys = append(keys, key)
+			}
 		}
 	}
 

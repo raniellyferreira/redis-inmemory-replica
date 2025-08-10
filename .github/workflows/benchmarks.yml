@@ -1,0 +1,180 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run benchmarks weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    # Allow manual triggering
+
+jobs:
+  replication-benchmarks:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.5'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Install redis-tools
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    
+    - name: Wait for Redis
+      run: |
+        echo "Waiting for Redis to be ready..."
+        for i in {1..60}; do
+          if redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo "Redis is ready!"
+            redis-cli INFO server | grep redis_version || true
+            break
+          fi
+          echo "Attempt $i/60: waiting for Redis..."
+          sleep 2
+        done
+        
+        # Final check
+        if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+          echo "Redis failed to start properly"
+          exit 1
+        fi
+    
+    - name: Run Replication Throughput Benchmarks
+      run: |
+        echo "Running replication throughput benchmarks..."
+        echo "Redis availability check:"
+        redis-cli ping || echo "Redis not responding - benchmarks will be skipped"
+        
+        # Run benchmarks with proper timeout and error handling
+        if timeout 300 go test -run=^$ -bench=BenchmarkReplicationThroughput -benchtime=5s -benchmem -timeout=240s; then
+          echo "✅ Replication throughput benchmarks completed successfully"
+        else
+          echo "⚠️  Replication throughput benchmarks skipped or failed"
+          redis-cli ping || echo "Redis not available - this is expected in environments without Redis"
+        fi
+      env:
+        REDIS_ADDR: localhost:6379
+
+    - name: Run Replication Latency Benchmarks
+      run: |
+        echo "Running replication latency benchmarks..."
+        if timeout 180 go test -run=^$ -bench=BenchmarkReplicationLatency -benchtime=3s -benchmem -timeout=120s; then
+          echo "✅ Replication latency benchmarks completed successfully"
+        else
+          echo "⚠️  Replication latency benchmarks skipped or completed with warnings"
+        fi
+      env:
+        REDIS_ADDR: localhost:6379
+      continue-on-error: true
+
+    - name: Run Pattern Matching Benchmarks
+      run: |
+        echo "Running pattern matching benchmarks..."
+        go test -v -bench BenchmarkMatchPattern -benchtime=3s -benchmem ./storage/
+      continue-on-error: true
+
+    - name: Run Storage Operation Benchmarks
+      run: |
+        echo "Running storage operation benchmarks..."
+        go test -v -bench BenchmarkStorage -benchtime=3s -benchmem ./storage/
+      continue-on-error: true
+
+
+  memory-profiling:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.5'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Install redis-tools
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    
+    - name: Wait for Redis
+      run: |
+        for i in {1..30}; do
+          if redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo "Redis is ready!"
+            break
+          fi
+          sleep 2
+        done
+    
+    - name: Run Memory Profile Benchmark
+      run: |
+        echo "Running memory profiling benchmark..."
+        if timeout 240 go test -run=^$ -bench=BenchmarkReplicationThroughput -benchtime=3s -memprofile=mem.prof -cpuprofile=cpu.prof -timeout=180s; then
+          echo "✅ Memory profiling benchmark completed successfully"
+        else
+          echo "⚠️  Memory profiling benchmark skipped or completed with timeout"
+        fi
+        
+        # Basic memory analysis
+        if command -v go >/dev/null 2>&1; then
+          if [ -f mem.prof ]; then
+            echo "=== Memory Profile Summary ==="
+            go tool pprof -text -nodecount=10 mem.prof 2>/dev/null || echo "Memory profile analysis not available"
+          fi
+          if [ -f cpu.prof ]; then
+            echo ""
+            echo "=== CPU Profile Summary ==="  
+            go tool pprof -text -nodecount=10 cpu.prof 2>/dev/null || echo "CPU profile analysis not available"
+          fi
+        fi
+      env:
+        REDIS_ADDR: localhost:6379
+      continue-on-error: true
+
+    - name: Upload profiles
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-profiles
+        path: |
+          *.prof
+        retention-days: 7

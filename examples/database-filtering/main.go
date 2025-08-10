@@ -93,7 +93,7 @@ func main() {
 	// Try to read from different databases
 	for db := 0; db < 4; db++ {
 		_ = storage.SelectDB(db)
-		keys := storage.Keys()
+		keys := storage.Keys("*")
 
 		if len(keys) > 0 {
 			fmt.Printf("   Database %d: %d keys found\n", db, len(keys))
