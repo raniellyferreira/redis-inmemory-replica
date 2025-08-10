@@ -104,21 +104,23 @@ func main() {
 
 ## Redis Server Integration
 
-The library includes a production-ready Redis server that automatically starts when you provide a replica address. The server is fully compatible with Redis clients and supports read operations and auxiliary commands.
+The library includes a production-ready Redis server that **automatically starts when you provide a replica address via `WithReplicaAddr()`**. If no replica address is provided, no server listener is started and the library operates in library-only mode.
 
 ### Automatic Server Startup
+
+**The read-only server starts automatically when an address is defined via `WithReplicaAddr()`. If not provided, no listener is started.**
 
 ```go
 // Server starts automatically when replica address is provided
 replica, err := redisreplica.New(
     redisreplica.WithMaster("redis.example.com:6379"),
-    redisreplica.WithReplicaAddr(":6380"), // Server auto-starts
+    redisreplica.WithReplicaAddr(":6380"), // Server auto-starts on this address
 )
 
 // No server when replica address is not provided
 replicaLibraryOnly, err := redisreplica.New(
     redisreplica.WithMaster("redis.example.com:6379"),
-    // No WithReplicaAddr() = no server
+    // No WithReplicaAddr() = no server listener started
 )
 ```
 
@@ -463,7 +465,7 @@ replica, err := redisreplica.New(
     redisreplica.WithMasterAuth(os.Getenv("REDIS_PASSWORD")), // Use environment variable
     redisreplica.WithTLS(&tls.Config{...}),
     
-    // Local server
+    // Local server (starts automatically when address is provided)
     redisreplica.WithReplicaAddr(":6380"),
     
     // Timeouts and limits
@@ -476,7 +478,7 @@ replica, err := redisreplica.New(
     
     // Behavioral options
     redisreplica.WithCommandFilters([]string{"SET", "DEL"}),
-    redisreplica.WithServerEnabled(true),
+    redisreplica.WithWriteRedirection(true), // Forward writes to master instead of READONLY errors
 )
 ```
 
