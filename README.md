@@ -456,8 +456,6 @@ The engine provides seamless conversion between Lua and Redis data types:
 
 ## Configuration Options
 
-**⚠️ BREAKING CHANGE:** The `WithServerEnabled()` option was removed in v1.3.0. The read-only server now starts automatically when `WithReplicaAddr()` is provided. See [CHANGELOG.md](CHANGELOG.md) for full details.
-
 The library supports extensive configuration through functional options:
 
 ```go
