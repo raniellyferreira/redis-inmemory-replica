@@ -252,104 +252,29 @@ func (s *MemoryStorage) PTTL(key string) time.Duration {
 // ? matches a single character
 // [abc] matches any character in the brackets
 // [a-z] matches any character in the range
-// 
-// This method uses short lock periods and batch processing to avoid
-// blocking replication for extended periods
 func (s *MemoryStorage) Keys(pattern string) []string {
-	const batchSize = 1000 // Process keys in batches to avoid long locks
-
-	// Use the enhanced pattern matching system for better performance
-	strategy := GetMatchingStrategy()
-	
-	var allKeys []string
-	
-	// Get database reference under short lock
-	s.mu.RLock()
-	currentDB := s.currentDB
-	s.mu.RUnlock()
-
-	// For "*" pattern, use optimized path
-	if pattern == "*" || pattern == "" {
-		return s.getAllKeysInBatches(currentDB, batchSize)
-	}
-
-	// Process keys in batches to minimize lock time
-	processed := 0
-	for {
-		batch := s.getKeyBatch(currentDB, processed, batchSize)
-		if len(batch) == 0 {
-			break
-		}
-
-		// Process batch without holding lock
-		for _, key := range batch {
-			if MatchPatternWithStrategy(key, pattern, strategy) {
-				allKeys = append(allKeys, key)
-			}
-		}
-
-		processed += len(batch)
-		if len(batch) < batchSize {
-			break // Last batch
-		}
-	}
-
-	return allKeys
-}
-
-// getAllKeysInBatches efficiently returns all non-expired keys in batches
-func (s *MemoryStorage) getAllKeysInBatches(dbIndex int, batchSize int) []string {
-	var allKeys []string
-	processed := 0
-
-	for {
-		batch := s.getKeyBatch(dbIndex, processed, batchSize)
-		if len(batch) == 0 {
-			break
-		}
-
-		allKeys = append(allKeys, batch...)
-		processed += len(batch)
-		
-		if len(batch) < batchSize {
-			break // Last batch
-		}
-	}
-
-	return allKeys
-}
-
-// getKeyBatch returns a batch of keys starting from the given offset
-// This method minimizes lock time by only holding the lock during key collection
-func (s *MemoryStorage) getKeyBatch(dbIndex int, offset, batchSize int) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	db := s.databases[dbIndex]
-	keys := make([]string, 0, batchSize)
-	
-	count := 0
-	collected := 0
-	
+	db := s.databases[s.currentDB]
+	keys := make([]string, 0)
+
+	// Handle empty or "*" pattern - return all keys
+	if pattern == "" || pattern == "*" {
+		for key, value := range db.data {
+			if !value.IsExpired() {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+
+	// Use pattern matching system for consistent pattern support
 	for key, value := range db.data {
-		// Skip expired keys
-		if value.IsExpired() {
-			continue
-		}
-		
-		// Skip until we reach the offset
-		if count < offset {
-			count++
-			continue
-		}
-		
-		// Collect up to batchSize keys
-		keys = append(keys, key)
-		collected++
-		count++
-		
-		if collected >= batchSize {
-			break
+		if !value.IsExpired() {
+			if matchPattern(key, pattern) {
+				keys = append(keys, key)
+			}
 		}
 	}
 
