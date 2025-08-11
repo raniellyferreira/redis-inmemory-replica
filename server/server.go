@@ -935,6 +935,20 @@ func (c *Client) convertToValue(item interface{}) protocol.Value {
 		return protocol.Value{Type: protocol.TypeBulkString, IsNull: true}
 	case []byte:
 		return protocol.Value{Type: protocol.TypeBulkString, Data: v}
+	case []interface{}:
+		// Convert []interface{} to array protocol value
+		array := make([]protocol.Value, len(v))
+		for i, item := range v {
+			array[i] = c.convertToValue(item)
+		}
+		return protocol.Value{Type: protocol.TypeArray, Array: array}
+	case []string:
+		// Convert []string to array protocol value
+		array := make([]protocol.Value, len(v))
+		for i, s := range v {
+			array[i] = protocol.Value{Type: protocol.TypeBulkString, Data: []byte(s)}
+		}
+		return protocol.Value{Type: protocol.TypeArray, Array: array}
 	default:
 		return protocol.Value{Type: protocol.TypeBulkString, Data: []byte(fmt.Sprintf("%v", v))}
 	}
@@ -959,6 +973,13 @@ func (c *Client) writeResult(result interface{}) {
 		c.writeBulkString([]byte(fmt.Sprintf("%.17g", v)))
 	case []interface{}:
 		c.writeArray(v)
+	case []string:
+		// Convert []string to []interface{} properly
+		array := make([]interface{}, len(v))
+		for i, s := range v {
+			array[i] = s
+		}
+		c.writeArray(array)
 	case map[string]interface{}:
 		// Convert map to array of key-value pairs
 		array := make([]interface{}, 0, len(v)*2)

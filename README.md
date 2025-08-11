@@ -928,12 +928,6 @@ func (m *CustomMetrics) RecordCommandProcessed(cmd string, duration time.Duratio
    - Set appropriate memory limits with `WithMaxMemory`
    - Monitor memory usage with `GetInfo()`
 
-5. **GUI Clients (TablePlus, Redis Desktop Manager, etc.)**
-   - Database listings should now work properly with `INFO keyspace` support
-   - Use `CONFIG GET databases` to see available database count (16)
-   - Switch databases with `SELECT` command as normal
-   - GUI tools may require both `INFO keyspace` and `CONFIG GET databases` for full compatibility
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

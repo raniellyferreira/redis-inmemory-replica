@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-08-11
+
+### Added
+- **Complete GUI client support** for tools like TablePlus and Redis Desktop Manager
+- **INFO keyspace** command section showing database-specific key counts and expiration statistics
+- **CONFIG GET databases** command for client database discovery
+- **Enhanced SCAN command** with proper Redis protocol compliance and array response formatting
+- **WithDefaultDatabase(db int)** option to set the initial database connection (0-15)
+- **Improved benchmark stability** with better error handling for replication failures
+
+### Fixed
+- **SCAN command bug** where results were incorrectly formatted as strings instead of proper Redis arrays
+- **GUI client compatibility** issues that prevented database listings from displaying correctly
+- **Benchmark failures** from "replication stopped unexpectedly" errors are now handled gracefully
+
+### Changed
+- Enhanced benchmark timeouts and error handling for more stable CI/CD execution
+- Improved INFO command keyspace section to only show databases containing keys
+
 ## [1.3.0] - 2025-08-09
 
 ### Added
