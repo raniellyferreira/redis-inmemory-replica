@@ -414,6 +414,37 @@ func (s *MemoryStorage) Info() map[string]interface{} {
 	}
 }
 
+// DatabaseInfo returns information about all databases with keys
+func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dbInfo := make(map[int]map[string]interface{})
+	
+	for dbNum, db := range s.databases {
+		if len(db.data) == 0 {
+			continue // Skip empty databases for keyspace info
+		}
+		
+		keyCount := int64(len(db.data))
+		expiredCount := int64(0)
+		
+		// Count expired keys
+		for _, value := range db.data {
+			if value.IsExpired() {
+				expiredCount++
+			}
+		}
+		
+		dbInfo[dbNum] = map[string]interface{}{
+			"keys":    keyCount,
+			"expires": expiredCount,
+		}
+	}
+	
+	return dbInfo
+}
+
 // Close shuts down the storage
 func (s *MemoryStorage) Close() error {
 	close(s.cleanupStop)

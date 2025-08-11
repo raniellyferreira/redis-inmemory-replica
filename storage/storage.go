@@ -38,6 +38,7 @@ type Storage interface {
 
 	// Info and stats
 	Info() map[string]interface{}
+	DatabaseInfo() map[int]map[string]interface{}
 
 	// Shutdown
 	Close() error
