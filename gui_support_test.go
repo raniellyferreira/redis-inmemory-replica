@@ -47,15 +47,25 @@ func TestGUIClientSupport(t *testing.T) {
 	storage := replica.Storage()
 	
 	// Add data to database 0
-	storage.Set("key1", []byte("value1"), nil)
-	storage.Set("key2", []byte("value2"), nil)
+	if err := storage.Set("key1", []byte("value1"), nil); err != nil {
+		t.Fatalf("Failed to set key1: %v", err)
+	}
+	if err := storage.Set("key2", []byte("value2"), nil); err != nil {
+		t.Fatalf("Failed to set key2: %v", err)
+	}
 	
 	// Switch to database 1 and add data
-	storage.SelectDB(1)
-	storage.Set("db1key1", []byte("db1value1"), nil)
+	if err := storage.SelectDB(1); err != nil {
+		t.Fatalf("Failed to select database 1: %v", err)
+	}
+	if err := storage.Set("db1key1", []byte("db1value1"), nil); err != nil {
+		t.Fatalf("Failed to set db1key1: %v", err)
+	}
 	
 	// Switch back to database 0
-	storage.SelectDB(0)
+	if err := storage.SelectDB(0); err != nil {
+		t.Fatalf("Failed to select database 0: %v", err)
+	}
 
 	// Connect to the replica server
 	conn, err := net.Dial("tcp", "localhost:6381")

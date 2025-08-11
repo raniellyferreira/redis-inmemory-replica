@@ -21,11 +21,15 @@ func BenchmarkDatabaseInfoExpiredKeysCounting(b *testing.B) {
 	// Add test keys: 1000 total, 300 expired, 700 valid
 	for i := 0; i < 700; i++ {
 		key := "key" + string(rune(i))
-		stor.Set(key, []byte("value"), &futureTime)
+		if err := stor.Set(key, []byte("value"), &futureTime); err != nil {
+			b.Fatalf("Failed to set key %s: %v", key, err)
+		}
 	}
 	for i := 0; i < 300; i++ {
 		key := "expired" + string(rune(i))
-		stor.Set(key, []byte("value"), &expiredTime)
+		if err := stor.Set(key, []byte("value"), &expiredTime); err != nil {
+			b.Fatalf("Failed to set expired key %s: %v", key, err)
+		}
 	}
 	
 	b.ResetTimer()
@@ -56,11 +60,15 @@ func BenchmarkDatabaseInfoScaling(b *testing.B) {
 			
 			for i := 0; i < validCount; i++ {
 				key := fmt.Sprintf("key%d", i)
-				stor.Set(key, []byte("value"), &futureTime)
+				if err := stor.Set(key, []byte("value"), &futureTime); err != nil {
+					b.Fatalf("Failed to set key %s: %v", key, err)
+				}
 			}
 			for i := 0; i < expiredCount; i++ {
 				key := fmt.Sprintf("expired%d", i)
-				stor.Set(key, []byte("value"), &expiredTime)
+				if err := stor.Set(key, []byte("value"), &expiredTime); err != nil {
+					b.Fatalf("Failed to set expired key %s: %v", key, err)
+				}
 			}
 			
 			b.ResetTimer()
@@ -80,15 +88,21 @@ func BenchmarkDatabaseInfoMultiDB(b *testing.B) {
 	futureTime := now.Add(1 * time.Hour)
 	
 	for db := 0; db < 16; db++ {
-		stor.SelectDB(db)
+		if err := stor.SelectDB(db); err != nil {
+			b.Fatalf("Failed to select database %d: %v", db, err)
+		}
 		for i := 0; i < 100; i++ {
 			key := fmt.Sprintf("key%d", i)
-			stor.Set(key, []byte("value"), &futureTime)
+			if err := stor.Set(key, []byte("value"), &futureTime); err != nil {
+				b.Fatalf("Failed to set key %s in db %d: %v", key, db, err)
+			}
 		}
 	}
 	
 	// Go back to database 0
-	stor.SelectDB(0)
+	if err := stor.SelectDB(0); err != nil {
+		b.Fatalf("Failed to select database 0: %v", err)
+	}
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
