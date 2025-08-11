@@ -752,8 +752,15 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			if len(dbInfo) > 0 {
 				info.WriteString("# Keyspace\r\n")
 				for dbNum, dbStats := range dbInfo {
-					keys := dbStats["keys"].(int64)
-					expires := dbStats["expires"].(int64)
+					// Safe type assertions with fallback values
+					keys, ok := dbStats["keys"].(int64)
+					if !ok {
+						keys = 0
+					}
+					expires, ok := dbStats["expires"].(int64)
+					if !ok {
+						expires = 0
+					}
 					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d\r\n", dbNum, keys, expires))
 				}
 				info.WriteString("\r\n")

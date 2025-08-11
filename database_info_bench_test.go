@@ -30,7 +30,7 @@ func BenchmarkDatabaseInfoExpiredKeysCounting(b *testing.B) {
 	
 	b.ResetTimer()
 	
-	b.Run("CurrentImplementation", func(b *testing.B) {
+	b.Run("OptimizedImplementation", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_ = stor.DatabaseInfo()
 		}

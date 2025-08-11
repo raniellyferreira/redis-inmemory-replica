@@ -1564,6 +1564,9 @@ func BenchmarkReplicationStartup(b *testing.B) {
 		b.Fatalf("Failed to clear Redis: %v", err)
 	}
 
+	var successfulIterations int
+	var failedIterations int
+
 	for i := 0; i < b.N; i++ {
 		// Create replica with longer timeouts for stability
 		replicaOptions := []redisreplica.Option{
@@ -1597,15 +1600,19 @@ func BenchmarkReplicationStartup(b *testing.B) {
 			syncCancel()
 			cancel()
 			replica.Close()
-			// Use better error handling for "replication stopped unexpectedly"
+			
+			// Handle "replication stopped unexpectedly" more gracefully
 			if strings.Contains(err.Error(), "replication stopped unexpectedly") {
-				b.Logf("Replication stopped unexpectedly (master may be unavailable): %v", err)
-				b.SkipNow() // Skip this iteration instead of failing
+				failedIterations++
+				b.Logf("Iteration %d failed - replication stopped unexpectedly (master may be unavailable): %v", i, err)
+				// Continue to next iteration instead of skipping entire benchmark
+				continue
 			}
 			b.Fatalf("Failed to sync: %v", err)
 		}
 
 		elapsed := time.Since(start)
+		successfulIterations++
 		b.Logf("Startup iteration %d took: %v", i, elapsed)
 
 		syncCancel()
@@ -1614,6 +1621,14 @@ func BenchmarkReplicationStartup(b *testing.B) {
 		// Clean shutdown
 		if closeErr := replica.Close(); closeErr != nil {
 			b.Logf("Warning: Error during replica cleanup: %v", closeErr)
+		}
+	}
+	
+	// Report summary at the end
+	if failedIterations > 0 {
+		b.Logf("Benchmark completed: %d successful, %d failed iterations", successfulIterations, failedIterations)
+		if successfulIterations == 0 {
+			b.Skip("All iterations failed - master may be unavailable")
 		}
 	}
 }
