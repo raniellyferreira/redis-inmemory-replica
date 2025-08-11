@@ -415,6 +415,7 @@ func (s *MemoryStorage) Info() map[string]interface{} {
 }
 
 // DatabaseInfo returns information about all databases with keys
+// For databases with many keys, it uses sampling to estimate expired count for performance
 func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -429,10 +430,46 @@ func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 		keyCount := int64(len(db.data))
 		expiredCount := int64(0)
 		
-		// Count expired keys
-		for _, value := range db.data {
-			if value.IsExpired() {
-				expiredCount++
+		// For large databases, use sampling to estimate expired count for better performance
+		if keyCount > 1000 {
+			// Sample up to 100 keys to estimate expired ratio
+			sampleSize := 100
+			if int(keyCount) < sampleSize {
+				sampleSize = int(keyCount)
+			}
+			
+			expiredSample := 0
+			sampled := 0
+			
+			// Create a stable iteration order by copying keys first to avoid issues
+			// with concurrent map modifications during iteration
+			keys := make([]string, 0, sampleSize)
+			for key := range db.data {
+				keys = append(keys, key)
+				if len(keys) >= sampleSize {
+					break
+				}
+			}
+			
+			// Now sample from the stable key list
+			for _, key := range keys {
+				if value, exists := db.data[key]; exists && value.IsExpired() {
+					expiredSample++
+				}
+				sampled++
+			}
+			
+			// Estimate expired count based on sample ratio
+			if sampled > 0 {
+				expiredRatio := float64(expiredSample) / float64(sampled)
+				expiredCount = int64(expiredRatio * float64(keyCount))
+			}
+		} else {
+			// For smaller databases, count all expired keys precisely
+			for _, value := range db.data {
+				if value.IsExpired() {
+					expiredCount++
+				}
 			}
 		}
 		

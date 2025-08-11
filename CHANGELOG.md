@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **SCAN command bug** where results were incorrectly formatted as strings instead of proper Redis arrays
 - **GUI client compatibility** issues that prevented database listings from displaying correctly
+- **INFO keyspace listing inconsistency** where databases would randomly be missing from output due to concurrent access issues
+- **Restored performance optimization** in DatabaseInfo() for large databases (>1000 keys) using sampling to estimate expired counts
 - **INFO keyspace listing bug** where not all databases with data were consistently shown (reverted complex sampling optimization)
 - **Benchmark failures** from "replication stopped unexpectedly" errors are now handled gracefully
 
