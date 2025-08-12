@@ -17,7 +17,8 @@ type config struct {
 	replicaPassword string
 
 	// Database selection
-	databases []int // Which databases to replicate (empty = all)
+	databases       []int // Which databases to replicate (empty = all)
+	defaultDatabase int   // Default database to start with (0-15)
 
 	// Timeouts and limits
 	syncTimeout       time.Duration
@@ -43,6 +44,7 @@ func defaultConfig() *config {
 		masterAddr:        "localhost:6379",
 		replicaAddr:       "",    // No default replica address
 		databases:         []int{}, // empty = replicate all databases
+		defaultDatabase:   0,     // Default to database 0
 		syncTimeout:       30 * time.Second,
 		connectTimeout:    5 * time.Second,
 		readTimeout:       30 * time.Second,
@@ -478,6 +480,24 @@ func WithReplicaAuth(password string) Option {
 func WithWriteRedirection(enabled bool) Option {
 	return func(c *config) error {
 		c.redirectWrites = enabled
+		return nil
+	}
+}
+
+// WithDefaultDatabase sets the default database to start with (0-15)
+// This determines which database clients will initially connect to
+//
+// Example:
+//
+//	WithDefaultDatabase(0)  // Start with database 0 (default)
+//	WithDefaultDatabase(1)  // Start with database 1
+//	WithDefaultDatabase(15) // Start with database 15
+func WithDefaultDatabase(db int) Option {
+	return func(c *config) error {
+		if db < 0 || db > 15 {
+			return ErrInvalidConfig
+		}
+		c.defaultDatabase = db
 		return nil
 	}
 }

@@ -294,6 +294,8 @@ func (c *Client) executeCommand(cmd *protocol.Command) {
 		c.handleRole(cmd)
 	case "COMMAND":
 		c.handleCommand(cmd)
+	case "CONFIG":
+		c.handleConfig(cmd)
 	case "READONLY":
 		c.handleReadOnly(cmd)
 	case "EVAL":
@@ -743,6 +745,27 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			info.WriteString(fmt.Sprintf("used_memory_human:%s\r\n", formatBytes(memoryUsage)))
 			info.WriteString("\r\n")
 		}
+		
+		if section == "all" || section == "keyspace" {
+			// Get database information for keyspace section
+			dbInfo := c.server.storage.DatabaseInfo()
+			if len(dbInfo) > 0 {
+				info.WriteString("# Keyspace\r\n")
+				for dbNum, dbStats := range dbInfo {
+					// Safe type assertions with fallback values
+					keys, ok := dbStats["keys"].(int64)
+					if !ok {
+						keys = 0
+					}
+					expires, ok := dbStats["expires"].(int64)
+					if !ok {
+						expires = 0
+					}
+					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d\r\n", dbNum, keys, expires))
+				}
+				info.WriteString("\r\n")
+			}
+		}
 	}
 
 	c.writeBulkString([]byte(strings.TrimSpace(info.String())))
@@ -801,6 +824,48 @@ func (c *Client) handleReadOnly(cmd *protocol.Command) {
 		return
 	}
 	c.writeString("OK")
+}
+
+func (c *Client) handleConfig(cmd *protocol.Command) {
+	if len(cmd.Args) < 1 {
+		c.writeError("ERR wrong number of arguments for 'config' command")
+		return
+	}
+
+	subCmd := strings.ToUpper(string(cmd.Args[0]))
+	switch subCmd {
+	case "GET":
+		c.handleConfigGet(cmd)
+	default:
+		c.writeError("ERR Unknown CONFIG subcommand or wrong number of arguments")
+	}
+}
+
+func (c *Client) handleConfigGet(cmd *protocol.Command) {
+	if len(cmd.Args) != 2 {
+		c.writeError("ERR wrong number of arguments for 'config get' command")
+		return
+	}
+
+	parameter := strings.ToLower(string(cmd.Args[1]))
+	switch parameter {
+	case "databases":
+		// Redis typically supports 16 databases (0-15)
+		result := []interface{}{
+			"databases",
+			"16",
+		}
+		c.writeArray(result)
+	case "*":
+		// Return minimal config for wildcard
+		result := []interface{}{
+			"databases", "16",
+		}
+		c.writeArray(result)
+	default:
+		// Return empty array for unknown parameters (Redis behavior)
+		c.writeArray([]interface{}{})
+	}
 }
 
 // Helper function to format bytes in human readable format
@@ -877,6 +942,20 @@ func (c *Client) convertToValue(item interface{}) protocol.Value {
 		return protocol.Value{Type: protocol.TypeBulkString, IsNull: true}
 	case []byte:
 		return protocol.Value{Type: protocol.TypeBulkString, Data: v}
+	case []interface{}:
+		// Convert []interface{} to array protocol value
+		array := make([]protocol.Value, len(v))
+		for i, item := range v {
+			array[i] = c.convertToValue(item)
+		}
+		return protocol.Value{Type: protocol.TypeArray, Array: array}
+	case []string:
+		// Convert []string to array protocol value
+		array := make([]protocol.Value, len(v))
+		for i, s := range v {
+			array[i] = protocol.Value{Type: protocol.TypeBulkString, Data: []byte(s)}
+		}
+		return protocol.Value{Type: protocol.TypeArray, Array: array}
 	default:
 		return protocol.Value{Type: protocol.TypeBulkString, Data: []byte(fmt.Sprintf("%v", v))}
 	}
@@ -901,6 +980,13 @@ func (c *Client) writeResult(result interface{}) {
 		c.writeBulkString([]byte(fmt.Sprintf("%.17g", v)))
 	case []interface{}:
 		c.writeArray(v)
+	case []string:
+		// Convert []string to []interface{} properly
+		array := make([]interface{}, len(v))
+		for i, s := range v {
+			array[i] = s
+		}
+		c.writeArray(array)
 	case map[string]interface{}:
 		// Convert map to array of key-value pairs
 		array := make([]interface{}, 0, len(v)*2)

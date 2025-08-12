@@ -2,6 +2,7 @@ package redisreplica
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -73,6 +74,13 @@ func New(opts ...Option) (*Replica, error) {
 	stor := storage.NewMemory()
 	if cfg.maxMemory > 0 {
 		stor.SetMemoryLimit(cfg.maxMemory)
+	}
+	
+	// Set the default database
+	if cfg.defaultDatabase != 0 {
+		if err := stor.SelectDB(cfg.defaultDatabase); err != nil {
+			return nil, fmt.Errorf("failed to select default database %d: %w", cfg.defaultDatabase, err)
+		}
 	}
 
 	// Create sync manager
