@@ -4,6 +4,7 @@ import (
 	"fmt"
 	randv2 "math/rand/v2"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
@@ -416,16 +417,27 @@ func (s *MemoryStorage) Info() map[string]interface{} {
 
 // DatabaseInfo returns information about all databases with keys
 // For databases with many keys, it uses sampling to estimate expired count for performance
+// Ensures consistent ordering by iterating databases in sorted order
 func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	dbInfo := make(map[int]map[string]interface{})
 	
+	// First, collect all database numbers with keys to ensure deterministic iteration order
+	var dbNums []int
 	for dbNum, db := range s.databases {
-		if len(db.data) == 0 {
-			continue // Skip empty databases for keyspace info
+		if len(db.data) > 0 {
+			dbNums = append(dbNums, dbNum)
 		}
+	}
+	
+	// Sort database numbers to ensure consistent output order
+	sort.Ints(dbNums)
+	
+	// Now iterate in sorted order
+	for _, dbNum := range dbNums {
+		db := s.databases[dbNum]
 		
 		keyCount := int64(len(db.data))
 		expiredCount := int64(0)
@@ -453,7 +465,7 @@ func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 			
 			// Now sample from the stable key list
 			for _, key := range keys {
-				if value, exists := db.data[key]; exists && value.IsExpired() {
+				if value, exists := db.data[key]; exists && value.Expiry != nil {
 					expiredSample++
 				}
 				sampled++
@@ -465,9 +477,9 @@ func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 				expiredCount = int64(expiredRatio * float64(keyCount))
 			}
 		} else {
-			// For smaller databases, count all expired keys precisely
+			// For smaller databases, count all keys with expiration set
 			for _, value := range db.data {
-				if value.IsExpired() {
+				if value.Expiry != nil {
 					expiredCount++
 				}
 			}
