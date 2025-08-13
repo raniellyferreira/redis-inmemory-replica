@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	redisreplica "github.com/raniellyferreira/redis-inmemory-replica"
 	"github.com/raniellyferreira/redis-inmemory-replica/protocol"
+	"github.com/raniellyferreira/redis-inmemory-replica/server"
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 )
 
@@ -379,5 +381,94 @@ func TestInfoKeyspace_ServerOutput(t *testing.T) {
 			foundDBs = append(foundDBs, dbNum)
 		}
 		t.Errorf("Expected %d databases, got %d: %v", len(databases), len(dbInfo), foundDBs)
+	}
+}
+
+// TestInfoKeyspace_EmptyKeyspaceAlwaysPresent ensures the keyspace section 
+// appears even when no databases contain any keys
+func TestInfoKeyspace_EmptyKeyspaceAlwaysPresent(t *testing.T) {
+	storage := storage.NewMemory()
+	srv := server.NewServer("localhost:0", storage)
+	
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	
+	// Connect to server
+	conn, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	
+	writer := protocol.NewWriter(conn)
+	reader := protocol.NewReader(conn)
+	
+	// Send INFO keyspace command
+	cmd := []protocol.Value{
+		{Type: protocol.TypeBulkString, Data: []byte("INFO")},
+		{Type: protocol.TypeBulkString, Data: []byte("keyspace")},
+	}
+	
+	if err := writer.WriteArray(cmd); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	
+	// Read response
+	resp, err := reader.ReadNext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	if resp.Type != protocol.TypeBulkString {
+		t.Fatalf("Expected bulk string response, got %v", resp.Type)
+	}
+	
+	output := string(resp.Data)
+	
+	// Verify keyspace section header is always present
+	if !strings.Contains(output, "# Keyspace") {
+		t.Errorf("Keyspace section header missing from INFO response. Got: %q", output)
+	}
+	
+	// Verify there are no database entries (since storage is empty)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "db") && strings.Contains(line, ":") {
+			t.Errorf("Unexpected database entry in empty keyspace: %q", line)
+		}
+	}
+	
+	// Also test INFO all to ensure keyspace section appears there too
+	cmd = []protocol.Value{
+		{Type: protocol.TypeBulkString, Data: []byte("INFO")},
+		{Type: protocol.TypeBulkString, Data: []byte("all")},
+	}
+	
+	if err := writer.WriteArray(cmd); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	
+	// Read response
+	resp, err = reader.ReadNext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	if resp.Type != protocol.TypeBulkString {
+		t.Fatalf("Expected bulk string response, got %v", resp.Type)
+	}
+	
+	allOutput := string(resp.Data)
+	if !strings.Contains(allOutput, "# Keyspace") {
+		t.Errorf("Keyspace section header missing from INFO all response")
 	}
 }

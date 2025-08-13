@@ -750,9 +750,11 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 		if section == "all" || section == "keyspace" {
 			// Get database information for keyspace section
 			dbInfo := c.server.storage.DatabaseInfo()
+			
+			// Always include keyspace section header, even if no databases have data
+			info.WriteString("# Keyspace\r\n")
+			
 			if len(dbInfo) > 0 {
-				info.WriteString("# Keyspace\r\n")
-				
 				// Create sorted list of database numbers for deterministic output
 				var dbNums []int
 				for dbNum := range dbInfo {
@@ -782,8 +784,8 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 					
 					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d,avg_ttl=%d\r\n", dbNum, keys, expires, avgTTL))
 				}
-				info.WriteString("\r\n")
 			}
+			info.WriteString("\r\n")
 		}
 	}
 
