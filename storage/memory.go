@@ -415,7 +415,7 @@ func (s *MemoryStorage) Info() map[string]interface{} {
 }
 
 // DatabaseInfo returns information about all databases with keys
-// For databases with many keys, it uses sampling to estimate expired count for performance
+// Returns accurate counts and includes avg_ttl calculation
 func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -427,55 +427,44 @@ func (s *MemoryStorage) DatabaseInfo() map[int]map[string]interface{} {
 			continue // Skip empty databases for keyspace info
 		}
 		
-		keyCount := int64(len(db.data))
-		expiredCount := int64(0)
+		var validKeyCount int64   // Keys that are NOT expired
+		var keysWithExpiry int64  // Keys that HAVE expiration set (regardless of expired status)
+		var totalTTL int64        // Sum of all TTLs for avg calculation
+		var ttlCount int64        // Count of keys with non-expired TTL for avg calculation
 		
-		// For large databases, use sampling to estimate expired count for better performance
-		if keyCount > 1000 {
-			// Sample up to 100 keys to estimate expired ratio
-			sampleSize := 100
-			if int(keyCount) < sampleSize {
-				sampleSize = int(keyCount)
+		now := time.Now()
+		
+		// Count all keys precisely
+		for _, value := range db.data {
+			if !value.IsExpired() {
+				validKeyCount++
 			}
 			
-			expiredSample := 0
-			sampled := 0
-			
-			// Create a stable iteration order by copying keys first to avoid issues
-			// with concurrent map modifications during iteration
-			keys := make([]string, 0, sampleSize)
-			for key := range db.data {
-				keys = append(keys, key)
-				if len(keys) >= sampleSize {
-					break
-				}
-			}
-			
-			// Now sample from the stable key list
-			for _, key := range keys {
-				if value, exists := db.data[key]; exists && value.IsExpired() {
-					expiredSample++
-				}
-				sampled++
-			}
-			
-			// Estimate expired count based on sample ratio
-			if sampled > 0 {
-				expiredRatio := float64(expiredSample) / float64(sampled)
-				expiredCount = int64(expiredRatio * float64(keyCount))
-			}
-		} else {
-			// For smaller databases, count all expired keys precisely
-			for _, value := range db.data {
-				if value.IsExpired() {
-					expiredCount++
+			// Count keys with expiration (regardless of whether expired)
+			if value.Expiry != nil {
+				keysWithExpiry++
+				
+				// For avg_ttl calculation, only consider non-expired keys
+				if !value.IsExpired() {
+					ttl := value.Expiry.Sub(now)
+					if ttl > 0 {
+						totalTTL += int64(ttl / time.Millisecond)
+						ttlCount++
+					}
 				}
 			}
 		}
 		
+		// Calculate average TTL in milliseconds
+		var avgTTL int64 = 0
+		if ttlCount > 0 {
+			avgTTL = totalTTL / ttlCount
+		}
+		
 		dbInfo[dbNum] = map[string]interface{}{
-			"keys":    keyCount,
-			"expires": expiredCount,
+			"keys":    validKeyCount,
+			"expires": keysWithExpiry,
+			"avg_ttl": avgTTL,
 		}
 	}
 	

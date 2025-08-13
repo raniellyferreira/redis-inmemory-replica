@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -751,7 +752,20 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			dbInfo := c.server.storage.DatabaseInfo()
 			if len(dbInfo) > 0 {
 				info.WriteString("# Keyspace\r\n")
-				for dbNum, dbStats := range dbInfo {
+				
+				// Create sorted list of database numbers for deterministic output
+				var dbNums []int
+				for dbNum := range dbInfo {
+					dbNums = append(dbNums, dbNum)
+				}
+				
+				// Sort database numbers using standard library for consistency
+				sort.Ints(dbNums)
+				
+				// Output databases in sorted order
+				for _, dbNum := range dbNums {
+					dbStats := dbInfo[dbNum]
+					
 					// Safe type assertions with fallback values
 					keys, ok := dbStats["keys"].(int64)
 					if !ok {
@@ -761,7 +775,12 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 					if !ok {
 						expires = 0
 					}
-					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d\r\n", dbNum, keys, expires))
+					avgTTL, ok := dbStats["avg_ttl"].(int64)
+					if !ok {
+						avgTTL = 0
+					}
+					
+					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d,avg_ttl=%d\r\n", dbNum, keys, expires, avgTTL))
 				}
 				info.WriteString("\r\n")
 			}

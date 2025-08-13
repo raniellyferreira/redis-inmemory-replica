@@ -139,6 +139,10 @@ func TestGUIClientSupport(t *testing.T) {
 		if !strings.Contains(infoOutput, "expires=0") {
 			t.Error("Expected 'expires=0' in INFO keyspace output")
 		}
+
+		if !strings.Contains(infoOutput, "avg_ttl=0") {
+			t.Error("Expected 'avg_ttl=0' in INFO keyspace output")
+		}
 	})
 
 	t.Run("INFO_all_includes_keyspace", func(t *testing.T) {
