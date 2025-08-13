@@ -142,10 +142,39 @@ The server implements a comprehensive set of Redis commands optimized for read-o
 - `DBSIZE` - Get total number of keys
 
 #### Server Information Commands
-- `INFO [section...]` - Get server information (server, replication, memory)
+- `INFO [section...]` - Get server information (server, replication, memory, keyspace)
 - `ROLE` - Get replication role information
 - `PING [message]` - Test connectivity
 - `COMMAND` - Get command information
+
+##### INFO Keyspace Section
+
+The `INFO keyspace` command provides detailed database statistics that are fully compatible with Redis 7.4+:
+
+```bash
+# Get keyspace information
+INFO keyspace
+
+# Example output:
+# Keyspace
+db0:keys=1000,expires=50,avg_ttl=30000
+db1:keys=250,expires=10,avg_ttl=15000
+db8:keys=466,expires=0,avg_ttl=0
+```
+
+**Fields:**
+- `keys` - Number of non-expired keys in the database
+- `expires` - Number of keys with expiration set (regardless of expiry status)
+- `avg_ttl` - Average time-to-live in milliseconds for keys with active TTL (0 if none)
+
+**Features:**
+- **Deterministic Ordering**: Databases are always listed in ascending numerical order
+- **Consistent Listings**: All databases with keys are included in every INFO call
+- **Accurate Counts**: Key counts exclude expired keys, matching Redis behavior
+- **Performance Optimized**: Efficient counting for databases with many keys
+- **Thread-Safe**: Consistent snapshots even during concurrent operations
+
+The keyspace section is included in `INFO all` output and can be requested separately with `INFO keyspace`.
 
 #### Administrative Commands
 - `SELECT db` - Switch database

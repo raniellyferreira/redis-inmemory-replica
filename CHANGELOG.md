@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **info-diff utility** (cmd/info-diff) for comparing INFO keyspace output between Redis instances
+- **avg_ttl field** in INFO keyspace output, showing average TTL in milliseconds for keys with expiration
+- **Comprehensive INFO keyspace tests** validating deterministic ordering, accurate counts, and avg_ttl presence
+
+### Fixed
+- **Inconsistent INFO Keyspace database listing** where some databases with keys were missing from output
+- **Wrong key counts in INFO keyspace** where expired keys were incorrectly included in the key count 
+- **Missing avg_ttl field** in INFO keyspace output (now shows 0 when no keys have TTL, or calculated average)
+- **Non-deterministic database ordering** in INFO keyspace output (now always ascending order: db0, db1, db2...)
+- **Intermittent behavior** in keyspace listings due to unsafe map iteration patterns
+
+### Changed
+- INFO keyspace now shows only non-expired keys in `keys` field (matches Redis 7.4+ behavior)
+- INFO keyspace databases are always listed in deterministic ascending order 
+- DatabaseInfo() method now provides thread-safe consistent snapshots
+
 ## [1.4.0] - 2025-08-11
 
 ### Added
