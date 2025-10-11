@@ -266,7 +266,7 @@ func TestMemoryOptions(t *testing.T) {
 // TestShardDistribution tests that keys are distributed across shards
 func TestShardDistribution(t *testing.T) {
 	stor := NewMemoryWithShards(16)
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numKeys := 1000
 
@@ -307,7 +307,7 @@ func TestShardDistribution(t *testing.T) {
 // TestShardedStorageMultiDB tests sharding with multiple databases
 func TestShardedStorageMultiDB(t *testing.T) {
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numDBs := 4
 	numKeysPerDB := 100
@@ -369,7 +369,7 @@ func TestShardedStorageMultiDB(t *testing.T) {
 // TestShardedCleanup tests that cleanup works correctly with sharded storage
 func TestShardedCleanup(t *testing.T) {
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	// Set aggressive cleanup config for faster testing
 	stor.SetCleanupConfig(CleanupConfig{
