@@ -250,7 +250,7 @@ func BenchmarkShardContention(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			// Pre-populate keys
 			for i := 0; i < bc.numKeys; i++ {
@@ -289,7 +289,7 @@ func TestConcurrentStress(t *testing.T) {
 	}
 
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numGoroutines := 100
 	numOperations := 1000

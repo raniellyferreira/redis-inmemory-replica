@@ -32,7 +32,11 @@ func TestGUIClientSupport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create replica: %v", err)
 	}
-	defer replica.Close()
+	defer func() {
+		if err := replica.Close(); err != nil {
+			t.Logf("Failed to close replica: %v", err)
+		}
+	}()
 
 	// Start server
 	ctx := context.Background()

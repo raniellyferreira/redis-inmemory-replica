@@ -10,7 +10,7 @@ import (
 // TestShardedStorageConcurrency tests concurrent access to sharded storage
 func TestShardedStorageConcurrency(t *testing.T) {
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numGoroutines := 50
 	numOperations := 100
