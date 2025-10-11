@@ -92,7 +92,7 @@ func TestShardedStorageMixedOperations(t *testing.T) {
 			for j := 0; j < numOperations; j++ {
 				key := fmt.Sprintf("key_%d", j)
 				value := []byte(fmt.Sprintf("value_%d_%d", id, j))
-				stor.Set(key, value, nil)
+				_ = stor.Set(key, value, nil)
 			}
 		}(i)
 	}
@@ -145,9 +145,9 @@ func TestShardedStorageWithExpiration(t *testing.T) {
 		key := fmt.Sprintf("key_%d", i)
 		value := []byte(fmt.Sprintf("value_%d", i))
 		if i%2 == 0 {
-			stor.Set(key, value, &futureTime)
+			_ = stor.Set(key, value, &futureTime)
 		} else {
-			stor.Set(key, value, &pastTime)
+			_ = stor.Set(key, value, &pastTime)
 		}
 	}
 
