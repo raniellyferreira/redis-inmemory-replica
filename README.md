@@ -532,6 +532,53 @@ customConfig := storage.CleanupConfig{
 replica.Storage().SetCleanupConfig(customConfig)
 ```
 
+## Storage Sharding
+
+The in-memory storage backend uses a sharded architecture for improved concurrency and reduced lock contention in multi-threaded workloads. This design is inspired by high-performance caching systems like Ristretto.
+
+### Default Configuration
+
+By default, `storage.NewMemory()` creates a storage instance with 256 shards (a power of 2 for optimal performance):
+
+```go
+import "github.com/raniellyferreira/redis-inmemory-replica/storage"
+
+// Uses 256 shards by default
+stor := storage.NewMemory()
+```
+
+### Custom Shard Count
+
+You can configure a custom number of shards using `NewMemoryWithShards()`. The shard count is automatically rounded up to the next power of 2:
+
+```go
+// Create storage with custom shard count
+stor := storage.NewMemoryWithShards(128)  // Uses 128 shards
+stor := storage.NewMemoryWithShards(100)  // Rounds up to 128 shards
+stor := storage.NewMemoryWithShards(512)  // Uses 512 shards
+```
+
+### How It Works
+
+- **Per-Shard Locks**: Each shard has its own `sync.RWMutex`, reducing lock contention
+- **Hash-Based Distribution**: Keys are distributed across shards using fast hashing (`hash/maphash`)
+- **Concurrent Operations**: Multiple goroutines can access different shards simultaneously
+- **Automatic Cleanup**: Background cleanup operates independently on each shard
+
+### Performance Benefits
+
+- **Reduced Contention**: Write operations on different keys can proceed in parallel
+- **Better Scalability**: Performance scales with the number of CPU cores
+- **Predictable Latency**: Shorter lock hold times due to smaller per-shard data sets
+
+### Considerations
+
+- **Shard Count**: More shards = less contention but slightly higher memory overhead
+- **Power of 2**: Shard counts are always powers of 2 for efficient bit masking
+- **Default is Optimal**: 256 shards works well for most workloads
+
+**Note**: The sharding is transparent to the API. All public interfaces remain unchanged, and existing code continues to work without modifications.
+
 ## Security
 
 This library includes comprehensive security features for production deployments:
