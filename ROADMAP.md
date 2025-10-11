@@ -107,6 +107,8 @@ BenchmarkLuaEngine_SimpleScript-4         14030    86945 ns/op    219216 B/op   
 
 ### Baseline Metrics (Current)
 
+For detailed baseline metrics across all subsystems, see [docs/baseline-metrics.md](docs/baseline-metrics.md).
+
 **Storage Operations:**
 ```
 BenchmarkStorageGet/Hit_Small-4       22359874    53.07 ns/op     5 B/op    1 allocs/op
@@ -116,16 +118,18 @@ BenchmarkStorageSet/Small_16B-4        3968053   303.4 ns/op   101 B/op    4 all
 **RESP Parsing:**
 ```
 BenchmarkReaderParseCommand/SET-4      877587    1245 ns/op    5008 B/op   15 allocs/op
+BenchmarkReaderParseBatch/BatchSET_10-4 209374   5511 ns/op    7312 B/op  114 allocs/op
 ```
 
 **RDB Ingest:**
 ```
-BenchmarkRDBIngest/Medium_100keys_1KB-4   Baseline TBD (currently implemented)
+BenchmarkRDBIngest/Medium_100keys_1KB-4   Baseline documented (currently implemented)
 ```
 
 **Lua Execution:**
 ```
 BenchmarkLuaEngine_SimpleScript-4      14030     86945 ns/op   219216 B/op  868 allocs/op
+BenchmarkLuaEngine_EvalSHA-4           13088     92695 ns/op   219217 B/op  868 allocs/op
 ```
 
 ### Target Improvements
