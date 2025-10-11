@@ -36,6 +36,9 @@ type config struct {
 	readOnly       bool
 	commandFilters []string
 	redirectWrites bool // Whether to redirect write commands to master instead of returning READONLY error
+	
+	// Storage options
+	shardCount int // Number of shards for storage (0 = use default)
 }
 
 // defaultConfig returns a configuration with sensible defaults
@@ -53,6 +56,7 @@ func defaultConfig() *config {
 		maxMemory:         0,                 // unlimited
 		readOnly:          true,
 		redirectWrites:    false, // Default: return READONLY error for writes
+		shardCount:        0,     // 0 = use storage default (64)
 		logger:            &defaultLogger{},
 		commandFilters:    []string{},
 	}
@@ -498,6 +502,29 @@ func WithDefaultDatabase(db int) Option {
 			return ErrInvalidConfig
 		}
 		c.defaultDatabase = db
+		return nil
+	}
+}
+
+// WithShardCount sets the number of shards for the in-memory storage backend
+// Sharding reduces lock contention under high concurrency by partitioning data
+// across multiple independent shards, each with its own lock
+//
+// The count is automatically rounded up to the next power of 2 for optimal performance
+// Set to 0 to use the storage default (64 shards)
+//
+// Example:
+//
+//	WithShardCount(64)   // Use 64 shards (good default)
+//	WithShardCount(128)  // Use 128 shards (high concurrency)
+//	WithShardCount(32)   // Use 32 shards (lower overhead)
+//	WithShardCount(100)  // Rounds up to 128 shards
+func WithShardCount(count int) Option {
+	return func(c *config) error {
+		if count < 0 {
+			return ErrInvalidConfig
+		}
+		c.shardCount = count
 		return nil
 	}
 }

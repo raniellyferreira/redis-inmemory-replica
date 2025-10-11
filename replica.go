@@ -71,7 +71,13 @@ func New(opts ...Option) (*Replica, error) {
 	}
 
 	// Create storage
-	stor := storage.NewMemory()
+	var stor *storage.MemoryStorage
+	if cfg.shardCount > 0 {
+		stor = storage.NewMemory(storage.WithShardCount(cfg.shardCount))
+	} else {
+		stor = storage.NewMemory() // Use default (64 shards)
+	}
+	
 	if cfg.maxMemory > 0 {
 		stor.SetMemoryLimit(cfg.maxMemory)
 	}
