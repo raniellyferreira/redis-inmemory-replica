@@ -791,8 +791,17 @@ The library is optimized for high performance:
 ### Benchmarks
 
 ```bash
-# Run benchmarks
+# Run standard benchmarks
 make benchmark
+
+# Run comprehensive benchmark suite with standardized configuration
+make bench-all
+
+# Generate CPU profile for a specific benchmark
+make profile pkg=./storage bench=BenchmarkStorageGet type=cpu
+
+# Compare two benchmark runs
+make bench-compare base=baseline.txt head=current.txt
 ```
 
 Example results:
@@ -802,6 +811,24 @@ BenchmarkRESPParser-8    	 1000000	      1200 ns/op	     256 B/op	       4 alloc
 BenchmarkStorageGet-8    	 5000000	       300 ns/op	       0 B/op	       0 allocs/op
 BenchmarkStorageSet-8    	 2000000	       800 ns/op	     128 B/op	       2 allocs/op
 ```
+
+### Performance Audit
+
+For detailed performance analysis and optimization guidance, see the [Performance Audit Guide](docs/performance-audit.md). This guide provides:
+
+- **Comprehensive benchmarking methodology** with standardized flags and environment setup
+- **CPU, memory, and allocation profiling** using pprof
+- **Statistical comparison** of benchmark results with benchstat
+- **Subsystem-specific analysis checklists** for RESP parser, RDB ingest, storage, pattern matching, expiration cleanup, and Lua engine
+- **Common optimization patterns** and best practices
+- **Automated scripts** for repeatable performance testing
+
+The performance audit infrastructure includes:
+- `scripts/perf/bench.sh` - Execute benchmarks across all packages
+- `scripts/perf/profile.sh` - Generate CPU/memory/allocation profiles
+- `scripts/perf/compare.sh` - Statistical comparison with benchstat
+- Comprehensive benchmark coverage for all critical paths
+- CI/CD integration for continuous performance monitoring
 
 ## Architecture
 

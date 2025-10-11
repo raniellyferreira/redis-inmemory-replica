@@ -1,0 +1,217 @@
+name: Performance Audit
+
+on:
+  workflow_dispatch:
+    # Allow manual triggering for performance audits
+  schedule:
+    # Run weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+  pull_request:
+    paths:
+      - 'storage/**'
+      - 'protocol/**'
+      - 'replication/**'
+      - 'lua/**'
+      - '**/*_bench_test.go'
+      - 'scripts/perf/**'
+
+jobs:
+  performance-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.2'
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Install benchstat
+      run: go install golang.org/x/perf/cmd/benchstat@latest
+      continue-on-error: true
+    
+    - name: Create artifacts directory
+      run: mkdir -p artifacts/bench artifacts/profiles
+    
+    - name: Run benchmark suite
+      run: |
+        echo "Running comprehensive benchmark suite..."
+        echo "Configuration:"
+        echo "  GOMAXPROCS: 1"
+        echo "  Go version: $(go version)"
+        
+        # Run benchmarks with fixed GOMAXPROCS for consistency
+        GOMAXPROCS=1 ./scripts/perf/bench.sh 5
+      env:
+        GOMAXPROCS: 1
+      continue-on-error: true
+    
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## Performance Audit Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Benchmarks completed at: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f artifacts/bench/latest.txt ]; then
+          echo "### Results Overview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmark results saved to artifacts." >> $GITHUB_STEP_SUMMARY
+          
+          # Count benchmarks
+          BENCH_COUNT=$(grep -c "^Benchmark" artifacts/bench/latest.txt || echo "0")
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Total benchmarks run: **${BENCH_COUNT}**" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract some key metrics if available
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Sample Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          grep "^Benchmark" artifacts/bench/latest.txt | head -10 >> $GITHUB_STEP_SUMMARY || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ No benchmark results found" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 Full results available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results
+        path: |
+          artifacts/bench/*.txt
+        retention-days: 30
+    
+    - name: Upload profiles (if generated)
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-profiles
+        path: |
+          artifacts/profiles/*.prof
+          artifacts/profiles/*.svg
+        retention-days: 7
+        if-no-files-found: ignore
+  
+  storage-benchmarks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.2'
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Run storage benchmarks
+      run: |
+        echo "Running storage benchmarks with detailed metrics..."
+        GOMAXPROCS=1 go test -bench=. -run=^$ -benchmem -benchtime=3s -count=3 ./storage/ | tee storage_bench.txt
+      env:
+        GOMAXPROCS: 1
+      continue-on-error: true
+    
+    - name: Analyze storage performance
+      if: always()
+      run: |
+        echo "## Storage Benchmark Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f storage_bench.txt ]; then
+          echo "### Key Storage Operations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          grep "BenchmarkStorage" storage_bench.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Upload storage benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: storage-benchmarks
+        path: storage_bench.txt
+        retention-days: 30
+        if-no-files-found: ignore
+  
+  protocol-benchmarks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.2'
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Run protocol benchmarks
+      run: |
+        echo "Running RESP protocol benchmarks..."
+        GOMAXPROCS=1 go test -bench=. -run=^$ -benchmem -benchtime=3s -count=3 ./protocol/ | tee protocol_bench.txt
+      env:
+        GOMAXPROCS: 1
+      continue-on-error: true
+    
+    - name: Analyze protocol performance
+      if: always()
+      run: |
+        echo "## Protocol Benchmark Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f protocol_bench.txt ]; then
+          echo "### RESP Parser/Writer Performance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          grep "Benchmark" protocol_bench.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Upload protocol benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: protocol-benchmarks
+        path: protocol_bench.txt
+        retention-days: 30
+        if-no-files-found: ignore

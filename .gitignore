@@ -41,3 +41,8 @@ go.work.sum
 # .idea/
 # .vscode/
 test_output.txt
+
+# Performance artifacts
+artifacts/
+*.prof
+*.pprof

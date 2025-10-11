@@ -1,7 +1,7 @@
 # Redis In-Memory Replica Library Makefile
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps
+.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare
 
 # Go parameters
 GOCMD=go
@@ -48,6 +48,24 @@ test-short: ## Run short tests only
 benchmark: ## Run benchmarks
 	@echo "Running benchmarks..."
 	$(GOTEST) -bench=. -benchmem ./...
+
+bench-all: ## Run all benchmarks with standardized flags and save results
+	@echo "Running comprehensive benchmark suite..."
+	@./scripts/perf/bench.sh
+
+profile: ## Generate CPU/memory/allocation profile for a benchmark (usage: make profile pkg=./storage bench=BenchmarkStorageSet [type=cpu])
+	@if [ -z "$(pkg)" ] || [ -z "$(bench)" ]; then \
+		echo "Usage: make profile pkg=./storage bench=BenchmarkStorageSet [type=cpu|mem|allocs]"; \
+		exit 1; \
+	fi
+	@./scripts/perf/profile.sh $(pkg) $(bench) $(or $(type),cpu)
+
+bench-compare: ## Compare two benchmark results (usage: make bench-compare base=baseline.txt head=current.txt)
+	@if [ -z "$(base)" ] || [ -z "$(head)" ]; then \
+		echo "Usage: make bench-compare base=baseline.txt head=current.txt"; \
+		exit 1; \
+	fi
+	@./scripts/perf/compare.sh $(base) $(head)
 
 coverage: test ## Generate test coverage report
 	@echo "Generating coverage report..."
