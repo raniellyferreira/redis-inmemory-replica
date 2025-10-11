@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"testing"
 	"sort"
+	"testing"
 	"time"
 )
 
@@ -13,7 +13,7 @@ func TestMemoryStorageKeysPattern(t *testing.T) {
 	// Add test keys
 	testKeys := []string{
 		"user:1",
-		"user:2", 
+		"user:2",
 		"user:10",
 		"config:app",
 		"config:db",
@@ -52,13 +52,13 @@ func TestMemoryStorageKeysPattern(t *testing.T) {
 			expected: []string{"user:1", "user:2", "user:10"},
 		},
 		{
-			name:     "match config prefix", 
+			name:     "match config prefix",
 			pattern:  "config:*",
 			expected: []string{"config:app", "config:db"},
 		},
 		{
 			name:     "match session prefix",
-			pattern:  "session:*", 
+			pattern:  "session:*",
 			expected: []string{"session:abc123", "session:def456"},
 		},
 		{
@@ -101,11 +101,11 @@ func TestMemoryStorageKeysPattern(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := s.Keys(tt.pattern)
-			
+
 			// Sort both slices for comparison
 			sort.Strings(result)
 			sort.Strings(tt.expected)
-			
+
 			if !slicesEqual(result, tt.expected) {
 				t.Errorf("Keys(%q) = %v, want %v", tt.pattern, result, tt.expected)
 			}
@@ -138,10 +138,10 @@ func TestMemoryStorageKeysPatternWithExpiredKeys(t *testing.T) {
 	// Test that expired keys are not returned
 	result := s.Keys("*")
 	sort.Strings(result)
-	
+
 	expected := []string{"active:key1", "active:key2"}
 	sort.Strings(expected)
-	
+
 	if !slicesEqual(result, expected) {
 		t.Errorf("Keys(*) = %v, want %v (expired keys should be excluded)", result, expected)
 	}
@@ -166,7 +166,7 @@ func TestMemoryStorageKeysPatternInvalidPattern(t *testing.T) {
 	// Test with malformed pattern (unclosed bracket)
 	// This should not crash and should return empty results
 	result := s.Keys("test:[key")
-	
+
 	// Invalid patterns should return empty results
 	if len(result) != 0 {
 		t.Errorf("Keys with invalid pattern should return empty results, got %v", result)

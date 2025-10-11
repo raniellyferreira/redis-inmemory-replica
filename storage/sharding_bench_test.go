@@ -31,7 +31,9 @@ func BenchmarkConcurrentGet(b *testing.B) {
 			for i := 0; i < numKeys; i++ {
 				key := fmt.Sprintf("key_%d", i)
 				value := []byte(fmt.Sprintf("value_%d", i))
-				stor.Set(key, value, nil)
+				if err := stor.Set(key, value, nil); err != nil {
+					b.Fatalf("Set failed: %v", err)
+				}
 			}
 
 			b.ResetTimer()
@@ -72,7 +74,7 @@ func BenchmarkConcurrentSet(b *testing.B) {
 				for pb.Next() {
 					key := fmt.Sprintf("key_%d", i)
 					value := []byte(fmt.Sprintf("value_%d", i))
-					stor.Set(key, value, nil)
+					_ = stor.Set(key, value, nil)
 					i++
 				}
 			})
@@ -101,7 +103,9 @@ func BenchmarkConcurrentMixed(b *testing.B) {
 			for i := 0; i < numKeys; i++ {
 				key := fmt.Sprintf("key_%d", i)
 				value := []byte(fmt.Sprintf("value_%d", i))
-				stor.Set(key, value, nil)
+				if err := stor.Set(key, value, nil); err != nil {
+					b.Fatalf("Set failed: %v", err)
+				}
 			}
 
 			b.ResetTimer()
@@ -115,7 +119,7 @@ func BenchmarkConcurrentMixed(b *testing.B) {
 						stor.Get(key)
 					} else if op < 9 {
 						value := []byte(fmt.Sprintf("value_%d", i))
-						stor.Set(key, value, nil)
+						_ = stor.Set(key, value, nil)
 					} else {
 						stor.Del(key)
 					}
@@ -148,7 +152,9 @@ func BenchmarkKeysAggregation(b *testing.B) {
 			for i := 0; i < bc.numKeys; i++ {
 				key := fmt.Sprintf("key_%d", i)
 				value := []byte(fmt.Sprintf("value_%d", i))
-				stor.Set(key, value, nil)
+				if err := stor.Set(key, value, nil); err != nil {
+					b.Fatalf("Set failed: %v", err)
+				}
 			}
 
 			b.ResetTimer()
@@ -183,7 +189,7 @@ func BenchmarkConcurrentExpiration(b *testing.B) {
 				for pb.Next() {
 					key := fmt.Sprintf("key_%d", i)
 					value := []byte(fmt.Sprintf("value_%d", i))
-					stor.Set(key, value, &futureTime)
+					_ = stor.Set(key, value, &futureTime)
 					stor.TTL(key)
 					i++
 				}
@@ -214,7 +220,9 @@ func BenchmarkShardedMemoryUsage(b *testing.B) {
 			for i := 0; i < bc.numKeys; i++ {
 				key := fmt.Sprintf("key_%d", i)
 				value := []byte(fmt.Sprintf("value_%d", i))
-				stor.Set(key, value, nil)
+				if err := stor.Set(key, value, nil); err != nil {
+					b.Fatalf("Set failed: %v", err)
+				}
 			}
 
 			b.ResetTimer()
@@ -248,7 +256,9 @@ func BenchmarkShardContention(b *testing.B) {
 			for i := 0; i < bc.numKeys; i++ {
 				key := fmt.Sprintf("key_%d", i)
 				value := []byte(fmt.Sprintf("value_%d", i))
-				stor.Set(key, value, nil)
+				if err := stor.Set(key, value, nil); err != nil {
+					b.Fatalf("Set failed: %v", err)
+				}
 			}
 
 			b.ResetTimer()
@@ -258,10 +268,10 @@ func BenchmarkShardContention(b *testing.B) {
 					// All goroutines access same small set of keys
 					key := fmt.Sprintf("key_%d", i%bc.numKeys)
 					value := []byte(fmt.Sprintf("value_%d", i))
-					
+
 					// Mix of operations to simulate real workload
 					if i%3 == 0 {
-						stor.Set(key, value, nil)
+						_ = stor.Set(key, value, nil)
 					} else {
 						stor.Get(key)
 					}

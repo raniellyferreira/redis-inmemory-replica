@@ -24,9 +24,9 @@ type MemoryStorage struct {
 	currentDB int
 
 	// Sharding configuration
-	shards     int
-	shardMask  uint64
-	hashSeed   maphash.Seed
+	shards    int
+	shardMask uint64
+	hashSeed  maphash.Seed
 
 	// Memory management
 	memoryLimit int64
@@ -46,11 +46,6 @@ type MemoryStorage struct {
 // shardedDatabase represents a Redis database with sharded data
 type shardedDatabase struct {
 	shards []shard
-}
-
-// database is kept for backward compatibility but no longer used
-type database struct {
-	data map[string]*Value
 }
 
 // NewMemory creates a new in-memory storage instance with default number of shards (256)
@@ -158,12 +153,14 @@ func (s *MemoryStorage) Get(key string) ([]byte, bool) {
 		}
 	}
 
-	// Notify observers (hold read lock to prevent value from changing)
+	// Notify observers while holding shard lock to prevent race conditions
 	s.mu.RLock()
-	for _, observer := range s.observers {
+	observers := s.observers
+	s.mu.RUnlock()
+
+	for _, observer := range observers {
 		observer.OnKeyAccessed(key)
 	}
-	s.mu.RUnlock()
 
 	sh.mu.RUnlock()
 

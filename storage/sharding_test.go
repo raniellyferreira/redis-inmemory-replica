@@ -170,7 +170,7 @@ func TestShardedStorageWithExpiration(t *testing.T) {
 // TestNewMemoryWithShards tests the constructor with different shard counts
 func TestNewMemoryWithShards(t *testing.T) {
 	testCases := []struct {
-		name           string
+		name            string
 		requestedShards int
 		expectedShards  int
 	}{
