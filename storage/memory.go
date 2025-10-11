@@ -48,31 +48,37 @@ type shardedDatabase struct {
 	shards []shard
 }
 
-// NewMemory creates a new in-memory storage instance with default number of shards (256)
-func NewMemory() *MemoryStorage {
-	return NewMemoryWithShards(256)
+// MemoryOption is a function that configures a MemoryStorage instance
+type MemoryOption func(*MemoryStorage)
+
+// WithShardCount sets the number of shards for the storage
+// The number is automatically rounded up to the next power of 2 for optimal performance
+func WithShardCount(count int) MemoryOption {
+	return func(s *MemoryStorage) {
+		if count > 0 {
+			s.shards = nextPowerOf2(count)
+			s.shardMask = uint64(s.shards - 1)
+		}
+	}
 }
 
-// NewMemoryWithShards creates a new in-memory storage instance with specified number of shards
-// The number of shards is automatically rounded up to the next power of 2 for optimal performance
-func NewMemoryWithShards(numShards int) *MemoryStorage {
-	// Ensure numShards is a power of 2
-	if numShards <= 0 {
-		numShards = 256
-	}
-	// Round up to next power of 2
-	numShards = nextPowerOf2(numShards)
-
+// NewMemory creates a new in-memory storage instance with default number of shards (64)
+func NewMemory(opts ...MemoryOption) *MemoryStorage {
 	s := &MemoryStorage{
 		databases:     make(map[int]*shardedDatabase),
 		currentDB:     0,
-		shards:        numShards,
-		shardMask:     uint64(numShards - 1),
+		shards:        64, // Default to 64 shards
+		shardMask:     63, // 64 - 1
 		hashSeed:      maphash.MakeSeed(),
 		cleanupStop:   make(chan struct{}),
 		cleanupDone:   make(chan struct{}),
 		cleanupConfig: CleanupConfigDefault,
 		rng:           randv2.New(randv2.NewPCG(uint64(time.Now().UnixNano()), 0)),
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	// Initialize default database with shards
@@ -82,6 +88,13 @@ func NewMemoryWithShards(numShards int) *MemoryStorage {
 	go s.cleanupExpiredKeys()
 
 	return s
+}
+
+// NewMemoryWithShards creates a new in-memory storage instance with specified number of shards
+// Deprecated: Use NewMemory(WithShardCount(n)) instead
+// The number of shards is automatically rounded up to the next power of 2 for optimal performance
+func NewMemoryWithShards(numShards int) *MemoryStorage {
+	return NewMemory(WithShardCount(numShards))
 }
 
 // newShardedDatabase creates a new sharded database

@@ -174,7 +174,7 @@ func TestNewMemoryWithShards(t *testing.T) {
 		requestedShards int
 		expectedShards  int
 	}{
-		{"Zero shards", 0, 256},
+		{"Zero shards", 0, 64},
 		{"One shard", 1, 1},
 		{"Two shards", 2, 2},
 		{"Three shards (rounds to 4)", 3, 4},
@@ -182,7 +182,7 @@ func TestNewMemoryWithShards(t *testing.T) {
 		{"Hundred shards (rounds to 128)", 100, 128},
 		{"Two fifty six shards", 256, 256},
 		{"Five hundred shards (rounds to 512)", 500, 512},
-		{"Negative shards", -1, 256},
+		{"Negative shards", -1, 64},
 	}
 
 	for _, tc := range testCases {
@@ -214,6 +214,53 @@ func TestNewMemoryWithShards(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMemoryOptions tests the option pattern for configuring MemoryStorage
+func TestMemoryOptions(t *testing.T) {
+	t.Run("Default configuration", func(t *testing.T) {
+		stor := NewMemory()
+		defer func() { _ = stor.Close() }()
+		
+		if stor.shards != 64 {
+			t.Errorf("Expected 64 default shards, got %d", stor.shards)
+		}
+		if stor.shardMask != 63 {
+			t.Errorf("Expected shard mask 63, got %d", stor.shardMask)
+		}
+	})
+
+	t.Run("WithShardCount option", func(t *testing.T) {
+		stor := NewMemory(WithShardCount(128))
+		defer func() { _ = stor.Close() }()
+		
+		if stor.shards != 128 {
+			t.Errorf("Expected 128 shards, got %d", stor.shards)
+		}
+		if stor.shardMask != 127 {
+			t.Errorf("Expected shard mask 127, got %d", stor.shardMask)
+		}
+	})
+
+	t.Run("WithShardCount rounds to power of 2", func(t *testing.T) {
+		stor := NewMemory(WithShardCount(100))
+		defer func() { _ = stor.Close() }()
+		
+		if stor.shards != 128 {
+			t.Errorf("Expected 128 shards (rounded from 100), got %d", stor.shards)
+		}
+	})
+
+	t.Run("Multiple options", func(t *testing.T) {
+		stor := NewMemory(
+			WithShardCount(32),
+		)
+		defer func() { _ = stor.Close() }()
+		
+		if stor.shards != 32 {
+			t.Errorf("Expected 32 shards, got %d", stor.shards)
+		}
+	})
 }
 
 // TestShardDistribution tests that keys are distributed across shards
