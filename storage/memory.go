@@ -2,12 +2,13 @@ package storage
 
 import (
 	"fmt"
-	"hash/maphash"
 	randv2 "math/rand/v2"
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
+	
+	"github.com/cespare/xxhash/v2"
 )
 
 // shard represents a single shard of data with its own lock
@@ -26,7 +27,6 @@ type MemoryStorage struct {
 	// Sharding configuration
 	shards    int
 	shardMask uint64
-	hashSeed  maphash.Seed
 
 	// Memory management
 	memoryLimit int64
@@ -69,7 +69,6 @@ func NewMemory(opts ...MemoryOption) *MemoryStorage {
 		currentDB:     0,
 		shards:        64, // Default to 64 shards
 		shardMask:     63, // 64 - 1
-		hashSeed:      maphash.MakeSeed(),
 		cleanupStop:   make(chan struct{}),
 		cleanupDone:   make(chan struct{}),
 		cleanupConfig: CleanupConfigDefault,
@@ -125,10 +124,7 @@ func nextPowerOf2(n int) int {
 
 // keyHash computes the hash for a key and returns the shard index
 func (s *MemoryStorage) keyHash(key string) uint64 {
-	var h maphash.Hash
-	h.SetSeed(s.hashSeed)
-	h.WriteString(key)
-	return h.Sum64() & s.shardMask
+	return xxhash.Sum64String(key) & s.shardMask
 }
 
 // Get retrieves a value by key
