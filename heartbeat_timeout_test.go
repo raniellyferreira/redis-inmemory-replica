@@ -186,7 +186,11 @@ func TestTCPKeepAliveConfiguration(t *testing.T) {
 		t.Errorf("Failed to create replica with TCP keepalive: %v", err)
 		return
 	}
-	defer replica.Close()
+	defer func() {
+		if err := replica.Close(); err != nil {
+			t.Logf("Failed to close replica: %v", err)
+		}
+	}()
 	
 	// TCP keepalive is configured in the connection setup
 	// This test validates that it doesn't break the configuration
@@ -234,7 +238,11 @@ func TestImprovedHeartbeatInterval(t *testing.T) {
 		t.Errorf("Failed to create replica: %v", err)
 		return
 	}
-	defer replica.Close()
+	defer func() {
+		if err := replica.Close(); err != nil {
+			t.Logf("Failed to close replica: %v", err)
+		}
+	}()
 	
 	// The default should now be 10s instead of 30s
 	// We can't directly check the interval, but we can verify the configuration succeeds

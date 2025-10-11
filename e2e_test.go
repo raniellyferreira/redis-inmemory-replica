@@ -1589,7 +1589,7 @@ func BenchmarkReplicationStartup(b *testing.B) {
 		
 		if err := replica.Start(ctx); err != nil {
 			cancel()
-			replica.Close()
+			_ = replica.Close() // Ignore error as we're already failing
 			b.Fatalf("Failed to start replica: %v", err)
 		}
 

@@ -146,7 +146,7 @@ func BenchmarkKeysAggregation(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			// Populate with data
 			for i := 0; i < bc.numKeys; i++ {
@@ -179,7 +179,7 @@ func BenchmarkConcurrentExpiration(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			futureTime := time.Now().Add(1 * time.Hour)
 
@@ -214,7 +214,7 @@ func BenchmarkShardedMemoryUsage(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			// Populate with data
 			for i := 0; i < bc.numKeys; i++ {
