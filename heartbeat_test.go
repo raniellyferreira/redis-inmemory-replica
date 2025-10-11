@@ -50,7 +50,11 @@ func TestHeartbeatConfiguration(t *testing.T) {
 			}
 
 			if err == nil {
-				defer replica.Close()
+				defer func() {
+					if err := replica.Close(); err != nil {
+						t.Logf("Failed to close replica: %v", err)
+					}
+				}()
 				// Just verify the replica was created successfully
 				if replica == nil {
 					t.Error("Expected replica to be created")
@@ -70,6 +74,8 @@ func TestHeartbeatIntervalValidation(t *testing.T) {
 		t.Errorf("Expected negative heartbeat interval to be allowed, got error: %v", err)
 	}
 	if replica != nil {
-		replica.Close()
+		if err := replica.Close(); err != nil {
+			t.Logf("Failed to close replica: %v", err)
+		}
 	}
 }

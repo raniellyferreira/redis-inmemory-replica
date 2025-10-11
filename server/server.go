@@ -1012,7 +1012,9 @@ func (c *Client) redirectToMaster(cmd *protocol.Command) {
 		c.writeError(fmt.Sprintf("ERR failed to connect to master: %v", err))
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close() // Intentionally ignore error in defer
+	}()
 
 	// Set connection timeouts
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
