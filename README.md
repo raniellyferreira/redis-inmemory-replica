@@ -4,18 +4,26 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/raniellyferreira/redis-inmemory-replica.svg)](https://pkg.go.dev/github.com/raniellyferreira/redis-inmemory-replica)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A production-ready Go library that implements an in-memory Redis replica with real-time synchronization capabilities. The library follows Go best practices for public packages and supports Redis clients like `github.com/redis/go-redis`.
+A production-ready Go library that implements an in-memory Redis replica with
+real-time synchronization capabilities. The library follows Go best practices
+for public packages and supports Redis clients like `github.com/redis/go-redis`.
 
 ## Features
 
-- **Real-time Replication**: Connects to Redis master and maintains synchronized copy in memory
-- **Streaming Parsers**: Memory-efficient RESP and RDB parsing for high-throughput applications
+- **Real-time Replication**: Connects to Redis master and maintains synchronized
+  copy in memory
+- **Streaming Parsers**: Memory-efficient RESP and RDB parsing for
+  high-throughput applications
 - **Redis Compatibility**: Works with popular Redis clients for read operations
-- **Lua Script Execution**: Full Redis-compatible Lua scripting with EVAL/EVALSHA support
-- **Production Ready**: Comprehensive error handling, logging, metrics, and graceful shutdown
+- **Lua Script Execution**: Full Redis-compatible Lua scripting with
+  EVAL/EVALSHA support
+- **Production Ready**: Comprehensive error handling, logging, metrics, and
+  graceful shutdown
 - **High Performance**: Optimized for >100k ops/sec with minimal memory overhead
-- **Flexible Configuration**: Extensive configuration options with functional options pattern
-- **Monitoring**: Built-in observability with metrics collection and status reporting
+- **Flexible Configuration**: Extensive configuration options with functional
+  options pattern
+- **Monitoring**: Built-in observability with metrics collection and status
+  reporting
 
 ## Quick Start
 
@@ -104,11 +112,15 @@ func main() {
 
 ## Redis Server Integration
 
-The library includes a production-ready Redis server that **automatically starts when you provide a replica address via `WithReplicaAddr()`**. If no replica address is provided, no server listener is started and the library operates in library-only mode.
+The library includes a production-ready Redis server that **automatically starts
+when you provide a replica address via `WithReplicaAddr()`**. If no replica
+address is provided, no server listener is started and the library operates in
+library-only mode.
 
 ### Automatic Server Startup
 
-**The read-only server starts automatically when an address is defined via `WithReplicaAddr()`. If not provided, no listener is started.**
+**The read-only server starts automatically when an address is defined via
+`WithReplicaAddr()`. If not provided, no listener is started.**
 
 ```go
 // Server starts automatically when replica address is provided
@@ -126,9 +138,11 @@ replicaLibraryOnly, err := redisreplica.New(
 
 ### Supported Redis Commands
 
-The server implements a comprehensive set of Redis commands optimized for read-only replica operations:
+The server implements a comprehensive set of Redis commands optimized for
+read-only replica operations:
 
 #### Data Access Commands
+
 - `GET key` - Retrieve value (returns LOADING before sync completion)
 - `MGET key1 key2 ...` - Retrieve multiple values
 - `EXISTS key [key...]` - Check key existence
@@ -137,22 +151,26 @@ The server implements a comprehensive set of Redis commands optimized for read-o
 - `TYPE key` - Get value type
 
 #### Key Iteration Commands
+
 - `KEYS pattern` - Find keys matching pattern (use with caution)
 - `SCAN cursor [MATCH pattern] [COUNT count]` - Iterate keys efficiently
 - `DBSIZE` - Get total number of keys
 
 #### Server Information Commands
+
 - `INFO [section...]` - Get server information (server, replication, memory)
 - `ROLE` - Get replication role information
 - `PING [message]` - Test connectivity
 - `COMMAND` - Get command information
 
 #### Administrative Commands
+
 - `SELECT db` - Switch database
 - `READONLY` - Acknowledge read-only mode
 - `QUIT` - Close connection
 
 #### Lua Scripting Commands
+
 - `EVAL script numkeys key1 ... arg1 ...` - Execute Lua script
 - `EVALSHA sha1 numkeys key1 ... arg1 ...` - Execute cached script
 - `SCRIPT LOAD script` - Cache script
@@ -176,7 +194,8 @@ err = client.Del(ctx, "key").Err()
 
 ### Write Command Redirection
 
-Optionally, you can enable write command redirection to forward write operations to the master instead of returning READONLY errors:
+Optionally, you can enable write command redirection to forward write operations
+to the master instead of returning READONLY errors:
 
 ```go
 // Default behavior: return READONLY errors for writes
@@ -194,7 +213,8 @@ replica, err := redisreplica.New(
 )
 ```
 
-When enabled, write commands are automatically forwarded to the master with proper authentication, and responses are proxied back to clients:
+When enabled, write commands are automatically forwarded to the master with
+proper authentication, and responses are proxied back to clients:
 
 ```go
 client := redis.NewClient(&redis.Options{Addr: ":6380"})
@@ -211,7 +231,9 @@ if err != nil {
 val, err := client.Get(ctx, "key").Result()
 ```
 
-**Note**: Write redirection requires the master to be accessible and may introduce additional latency. Use this feature when you need seamless read/write access through the replica.
+**Note**: Write redirection requires the master to be accessible and may
+introduce additional latency. Use this feature when you need seamless read/write
+access through the replica.
 
 ### Loading State
 
@@ -297,7 +319,8 @@ func main() {
 
 ## Lua Script Execution
 
-The library provides comprehensive Redis-compatible Lua script execution, enabling atomic operations and complex data processing.
+The library provides comprehensive Redis-compatible Lua script execution,
+enabling atomic operations and complex data processing.
 
 ### Supported Commands
 
@@ -437,7 +460,7 @@ result = client.EvalSHA(ctx, sha, []string{"mykey"}, "myvalue")
 The Lua execution engine is optimized for high performance:
 
 - **Simple scripts**: ~85μs per execution
-- **Redis commands**: ~97μs per execution  
+- **Redis commands**: ~97μs per execution
 - **Cached scripts (EVALSHA)**: ~85μs per execution
 - **Memory efficient**: ~220KB per execution with minimal allocations
 
@@ -445,14 +468,14 @@ The Lua execution engine is optimized for high performance:
 
 The engine provides seamless conversion between Lua and Redis data types:
 
-| Lua Type | Redis Type | Notes |
-|----------|------------|-------|
-| `nil` | Null bulk string | Represents Redis NULL |
-| `false` | Null bulk string | Redis treats false as NULL |
-| `string` | Bulk string | Direct conversion |
-| `number` | Integer/Bulk string | Integers vs floats handled appropriately |
-| `table` (array) | Array | Lua arrays become Redis arrays |
-| `table` (hash) | Array of key-value pairs | Lua hashes flattened to arrays |
+| Lua Type        | Redis Type               | Notes                                    |
+| --------------- | ------------------------ | ---------------------------------------- |
+| `nil`           | Null bulk string         | Represents Redis NULL                    |
+| `false`         | Null bulk string         | Redis treats false as NULL               |
+| `string`        | Bulk string              | Direct conversion                        |
+| `number`        | Integer/Bulk string      | Integers vs floats handled appropriately |
+| `table` (array) | Array                    | Lua arrays become Redis arrays           |
+| `table` (hash)  | Array of key-value pairs | Lua hashes flattened to arrays           |
 
 ## Configuration Options
 
@@ -484,7 +507,9 @@ replica, err := redisreplica.New(
 
 ## Storage Cleanup Configurations
 
-The library includes an optimized incremental cleanup system that mirrors Redis native behavior. Six predefined cleanup configurations are available for different use cases:
+The library includes an optimized incremental cleanup system that mirrors Redis
+native behavior. Six predefined cleanup configurations are available for
+different use cases:
 
 ### Predefined Configurations
 
@@ -506,14 +531,14 @@ replica.Storage().SetCleanupConfig(storage.CleanupConfigLowLatency)      // Mini
 
 ### Configuration Details
 
-| Configuration | Sample Size | Max Rounds | Batch Size | Expired Threshold | Use Case |
-|---------------|-------------|------------|------------|-------------------|----------|
-| `CleanupConfigDefault` | 20 | 4 | 10 | 25% | Balanced performance for most applications |
-| `CleanupConfigSmallDataset` | 10 | 2 | 5 | 50% | Datasets with < 10,000 keys |
-| `CleanupConfigMediumDataset` | 25 | 5 | 12 | 30% | Datasets with 10,000-100,000 keys |
-| `CleanupConfigLargeDataset` | 50 | 8 | 25 | 15% | Datasets with > 100,000 keys |
-| `CleanupConfigBestPerformance` | 100 | 10 | 50 | 10% | Maximum cleanup throughput |
-| `CleanupConfigLowLatency` | 15 | 3 | 8 | 40% | Latency-sensitive applications |
+| Configuration                  | Sample Size | Max Rounds | Batch Size | Expired Threshold | Use Case                                   |
+| ------------------------------ | ----------- | ---------- | ---------- | ----------------- | ------------------------------------------ |
+| `CleanupConfigDefault`         | 20          | 4          | 10         | 25%               | Balanced performance for most applications |
+| `CleanupConfigSmallDataset`    | 10          | 2          | 5          | 50%               | Datasets with < 10,000 keys                |
+| `CleanupConfigMediumDataset`   | 25          | 5          | 12         | 30%               | Datasets with 10,000-100,000 keys          |
+| `CleanupConfigLargeDataset`    | 50          | 8          | 25         | 15%               | Datasets with > 100,000 keys               |
+| `CleanupConfigBestPerformance` | 100         | 10         | 50         | 10%               | Maximum cleanup throughput                 |
+| `CleanupConfigLowLatency`      | 15          | 3          | 8          | 40%               | Latency-sensitive applications             |
 
 ### Custom Configuration
 
@@ -532,56 +557,10 @@ customConfig := storage.CleanupConfig{
 replica.Storage().SetCleanupConfig(customConfig)
 ```
 
-## Storage Sharding
-
-The in-memory storage backend uses a sharded architecture for improved concurrency and reduced lock contention in multi-threaded workloads. This design is inspired by high-performance caching systems like Ristretto.
-
-### Default Configuration
-
-By default, `storage.NewMemory()` creates a storage instance with 256 shards (a power of 2 for optimal performance):
-
-```go
-import "github.com/raniellyferreira/redis-inmemory-replica/storage"
-
-// Uses 256 shards by default
-stor := storage.NewMemory()
-```
-
-### Custom Shard Count
-
-You can configure a custom number of shards using `NewMemoryWithShards()`. The shard count is automatically rounded up to the next power of 2:
-
-```go
-// Create storage with custom shard count
-stor := storage.NewMemoryWithShards(128)  // Uses 128 shards
-stor := storage.NewMemoryWithShards(100)  // Rounds up to 128 shards
-stor := storage.NewMemoryWithShards(512)  // Uses 512 shards
-```
-
-### How It Works
-
-- **Per-Shard Locks**: Each shard has its own `sync.RWMutex`, reducing lock contention
-- **Hash-Based Distribution**: Keys are distributed across shards using fast hashing (`hash/maphash`)
-- **Concurrent Operations**: Multiple goroutines can access different shards simultaneously
-- **Automatic Cleanup**: Background cleanup operates independently on each shard
-
-### Performance Benefits
-
-- **Reduced Contention**: Write operations on different keys can proceed in parallel
-- **Better Scalability**: Performance scales with the number of CPU cores
-- **Predictable Latency**: Shorter lock hold times due to smaller per-shard data sets
-
-### Considerations
-
-- **Shard Count**: More shards = less contention but slightly higher memory overhead
-- **Power of 2**: Shard counts are always powers of 2 for efficient bit masking
-- **Default is Optimal**: 256 shards works well for most workloads
-
-**Note**: The sharding is transparent to the API. All public interfaces remain unchanged, and existing code continues to work without modifications.
-
 ## Security
 
-This library includes comprehensive security features for production deployments:
+This library includes comprehensive security features for production
+deployments:
 
 ### TLS Configuration
 
@@ -620,7 +599,8 @@ replica, err := redisreplica.New(
 )
 ```
 
-**Security Note**: Always use environment variables or secure configuration management for credentials. Never hardcode passwords in source code.
+**Security Note**: Always use environment variables or secure configuration
+management for credentials. Never hardcode passwords in source code.
 
 ### Network Security
 
@@ -647,7 +627,8 @@ replica, err := redisreplica.New(
 
 ### Security Auditing
 
-The library includes comprehensive security scanning that filters out false positives:
+The library includes comprehensive security scanning that filters out false
+positives:
 
 ```bash
 # Run comprehensive security audit
@@ -664,10 +645,15 @@ make security-static
 ```
 
 **Enhanced Security Features:**
-- **Smart Secret Detection**: Distinguishes between actual hardcoded secrets and legitimate variable names
-- **Test File Exclusion**: Security scans automatically ignore test files and examples
-- **Safe Operation Marking**: Use `// safe: reason` comments for intentional unsafe operations
-- **CI/CD Integration**: Automated security checks in GitHub Actions prevent security issues
+
+- **Smart Secret Detection**: Distinguishes between actual hardcoded secrets and
+  legitimate variable names
+- **Test File Exclusion**: Security scans automatically ignore test files and
+  examples
+- **Safe Operation Marking**: Use `// safe: reason` comments for intentional
+  unsafe operations
+- **CI/CD Integration**: Automated security checks in GitHub Actions prevent
+  security issues
 
 ### Security Best Practices
 
@@ -685,7 +671,8 @@ For detailed security guidelines, see [SECURITY.md](SECURITY.md).
 
 ### Basic Example
 
-See [`examples/basic/main.go`](examples/basic/main.go) for a complete basic usage example.
+See [`examples/basic/main.go`](examples/basic/main.go) for a complete basic
+usage example.
 
 ```bash
 # Run basic example (requires Redis on localhost:6379)
@@ -694,9 +681,11 @@ make examples
 
 ### Lua Scripting Examples
 
-See [`examples/lua-demo/main.go`](examples/lua-demo/main.go) for standalone Lua scripting examples.
+See [`examples/lua-demo/main.go`](examples/lua-demo/main.go) for standalone Lua
+scripting examples.
 
-See [`examples/replica-lua-demo/main.go`](examples/replica-lua-demo/main.go) for Lua scripting integrated with replication.
+See [`examples/replica-lua-demo/main.go`](examples/replica-lua-demo/main.go) for
+Lua scripting integrated with replication.
 
 ```bash
 # Run Lua demo examples
@@ -706,11 +695,13 @@ cd examples/replica-lua-demo && go run main.go
 
 ### Monitoring Example
 
-See [`examples/monitoring/main.go`](examples/monitoring/main.go) for monitoring and observability features.
+See [`examples/monitoring/main.go`](examples/monitoring/main.go) for monitoring
+and observability features.
 
 ### Cluster Example
 
-See [`examples/cluster/main.go`](examples/cluster/main.go) for managing multiple replicas.
+See [`examples/cluster/main.go`](examples/cluster/main.go) for managing multiple
+replicas.
 
 ## API Reference
 
@@ -793,7 +784,7 @@ type Storage interface {
 The library is optimized for high performance:
 
 - **Throughput**: >100k operations/second
-- **Memory Overhead**: <20% compared to data size  
+- **Memory Overhead**: <20% compared to data size
 - **Sync Speed**: 1GB RDB sync in <30 seconds
 - **GC Pressure**: Minimal through object pooling
 
@@ -805,6 +796,7 @@ make benchmark
 ```
 
 Example results:
+
 ```
 BenchmarkRESPParser-8    	 1000000	      1200 ns/op	     256 B/op	       4 allocs/op
 BenchmarkStorageGet-8    	 5000000	       300 ns/op	       0 B/op	       0 allocs/op
@@ -838,8 +830,6 @@ Redis Master → RESP Protocol → RDB Parser → Storage Layer → Application
 - **Go Versions**: 1.24.5+
 - **Redis Clients**: Compatible with `github.com/redis/go-redis` and others
 - **Platforms**: Linux, macOS, Windows
-
-
 
 ## Development
 
@@ -977,7 +967,8 @@ func (m *CustomMetrics) RecordCommandProcessed(cmd string, duration time.Duratio
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
 
 ## Acknowledgments
 
@@ -987,4 +978,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-For more information, visit the [documentation](https://pkg.go.dev/github.com/raniellyferreira/redis-inmemory-replica) or check out the [examples](examples/).
+For more information, visit the
+[documentation](https://pkg.go.dev/github.com/raniellyferreira/redis-inmemory-replica)
+or check out the [examples](examples/).
