@@ -241,3 +241,184 @@ func BenchmarkLuaEngine_MemoryUsage(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkLuaEngine_VaryingKeysCardinality benchmarks with different numbers of KEYS
+func BenchmarkLuaEngine_VaryingKeysCardinality(b *testing.B) {
+	stor := storage.NewMemory()
+	engine := NewEngine(stor)
+	
+	keyCounts := []int{0, 1, 5, 10, 25, 50}
+	
+	for _, count := range keyCounts {
+		name := "Keys_" + itoa(count)
+		b.Run(name, func(b *testing.B) {
+			// Build script that accesses all KEYS
+			script := "local result = {} "
+			for i := 1; i <= count; i++ {
+				script += "result[" + itoa(i) + "] = KEYS[" + itoa(i) + "] "
+			}
+			script += "return result"
+			
+			// Prepare keys array
+			keys := make([]string, count)
+			for i := 0; i < count; i++ {
+				keys[i] = "key_" + itoa(i)
+			}
+			
+			b.ResetTimer()
+			b.ReportAllocs()
+			
+			for i := 0; i < b.N; i++ {
+				_, err := engine.Eval(script, keys, []string{})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkLuaEngine_VaryingArgsCardinality benchmarks with different numbers of ARGV
+func BenchmarkLuaEngine_VaryingArgsCardinality(b *testing.B) {
+	stor := storage.NewMemory()
+	engine := NewEngine(stor)
+	
+	argCounts := []int{0, 1, 5, 10, 25, 50}
+	
+	for _, count := range argCounts {
+		name := "Args_" + itoa(count)
+		b.Run(name, func(b *testing.B) {
+			// Build script that accesses all ARGV
+			script := "local result = {} "
+			for i := 1; i <= count; i++ {
+				script += "result[" + itoa(i) + "] = ARGV[" + itoa(i) + "] "
+			}
+			script += "return result"
+			
+			// Prepare args array
+			args := make([]string, count)
+			for i := 0; i < count; i++ {
+				args[i] = "value_" + itoa(i)
+			}
+			
+			b.ResetTimer()
+			b.ReportAllocs()
+			
+			for i := 0; i < b.N; i++ {
+				_, err := engine.Eval(script, []string{}, args)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// Helper function to convert int to string
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	
+	var buf [20]byte
+	i := len(buf) - 1
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	
+	for n > 0 {
+		buf[i] = byte('0' + n%10)
+		n /= 10
+		i--
+	}
+	
+	if neg {
+		buf[i] = '-'
+		i--
+	}
+	
+	return string(buf[i+1:])
+}
+
+// BenchmarkLuaEngine_KeysAndArgsCardinality benchmarks with both KEYS and ARGV
+func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
+	stor := storage.NewMemory()
+	engine := NewEngine(stor)
+	
+	scenarios := []struct {
+		name     string
+		keyCount int
+		argCount int
+	}{
+		{"1k_1a", 1, 1},
+		{"5k_5a", 5, 5},
+		{"10k_10a", 10, 10},
+		{"25k_25a", 25, 25},
+	}
+	
+	for _, sc := range scenarios {
+		b.Run(sc.name, func(b *testing.B) {
+			// Script that processes both KEYS and ARGV
+			script := `
+				local result = {}
+				for i = 1, #KEYS do
+					redis.call('SET', KEYS[i], ARGV[i])
+					result[i] = redis.call('GET', KEYS[i])
+				end
+				return result
+			`
+			
+			// Prepare keys and args
+			keys := make([]string, sc.keyCount)
+			args := make([]string, sc.argCount)
+			for i := 0; i < sc.keyCount; i++ {
+				keys[i] = "key_" + string(rune('a'+i%26))
+			}
+			for i := 0; i < sc.argCount; i++ {
+				args[i] = "value_" + string(rune('a'+i%26))
+			}
+			
+			b.ResetTimer()
+			b.ReportAllocs()
+			
+			for i := 0; i < b.N; i++ {
+				_, err := engine.Eval(script, keys, args)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkLuaEngine_CachedVsUncached benchmarks cached (EvalSHA) vs uncached (Eval) execution
+func BenchmarkLuaEngine_CachedVsUncached(b *testing.B) {
+	stor := storage.NewMemory()
+	engine := NewEngine(stor)
+	
+	script := "return redis.call('SET', KEYS[1], ARGV[1])"
+	sha := engine.LoadScript(script)
+	keys := []string{"benchmark_key"}
+	args := []string{"benchmark_value"}
+	
+	b.Run("Uncached_Eval", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_, err := engine.Eval(script, keys, args)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	
+	b.Run("Cached_EvalSHA", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_, err := engine.EvalSHA(sha, keys, args)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}

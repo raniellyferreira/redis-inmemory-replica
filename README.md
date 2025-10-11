@@ -828,6 +828,19 @@ The performance audit infrastructure includes:
 - `scripts/perf/profile.sh` - Generate CPU/memory/allocation profiles
 - `scripts/perf/compare.sh` - Statistical comparison with benchstat
 - Comprehensive benchmark coverage for all critical paths
+
+### Performance Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the detailed performance optimization roadmap. This document outlines:
+
+- **Structured optimization plan** organized in phases with defined metrics
+- **Target improvements** for allocations (30-50% reduction) and latency (10-25% improvement)
+- **Baseline metrics** for all critical paths
+- **Tactical interventions** for RESP parser, storage, RDB ingest, and Lua engine
+- **Risk assessment** and mitigation strategies
+- **Acceptance criteria** for each optimization phase
+
+The roadmap provides a systematic approach to achieving performance comparable to or exceeding reference implementations like rueidis.
 - CI/CD integration for continuous performance monitoring
 
 ## Architecture

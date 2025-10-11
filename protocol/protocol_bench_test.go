@@ -358,3 +358,190 @@ func itoa(n int) string {
 	
 	return string(buf[i+1:])
 }
+
+// BenchmarkReaderParseBatch benchmarks parsing multiple commands in sequence (batch operations)
+func BenchmarkReaderParseBatch(b *testing.B) {
+	scenarios := []struct {
+		name       string
+		batchSize  int
+		cmdBuilder func(int) []byte
+	}{
+		{
+			name:      "BatchGET_10",
+			batchSize: 10,
+			cmdBuilder: func(i int) []byte {
+				key := "key" + itoa(i%10)
+				var buf bytes.Buffer
+				buf.WriteString("*2\r\n$3\r\nGET\r\n$")
+				buf.WriteString(itoa(len(key)))
+				buf.WriteString("\r\n")
+				buf.WriteString(key)
+				buf.WriteString("\r\n")
+				return buf.Bytes()
+			},
+		},
+		{
+			name:      "BatchSET_10",
+			batchSize: 10,
+			cmdBuilder: func(i int) []byte {
+				key := "key" + itoa(i%10)
+				var buf bytes.Buffer
+				buf.WriteString("*3\r\n$3\r\nSET\r\n$")
+				buf.WriteString(itoa(len(key)))
+				buf.WriteString("\r\n")
+				buf.WriteString(key)
+				buf.WriteString("\r\n$5\r\nvalue\r\n")
+				return buf.Bytes()
+			},
+		},
+		{
+			name:      "BatchGET_100",
+			batchSize: 100,
+			cmdBuilder: func(i int) []byte {
+				key := "key" + itoa(i%100)
+				var buf bytes.Buffer
+				buf.WriteString("*2\r\n$3\r\nGET\r\n$")
+				buf.WriteString(itoa(len(key)))
+				buf.WriteString("\r\n")
+				buf.WriteString(key)
+				buf.WriteString("\r\n")
+				return buf.Bytes()
+			},
+		},
+		{
+			name:      "BatchSET_100",
+			batchSize: 100,
+			cmdBuilder: func(i int) []byte {
+				key := "key" + itoa(i%100)
+				var buf bytes.Buffer
+				buf.WriteString("*3\r\n$3\r\nSET\r\n$")
+				buf.WriteString(itoa(len(key)))
+				buf.WriteString("\r\n")
+				buf.WriteString(key)
+				buf.WriteString("\r\n$5\r\nvalue\r\n")
+				return buf.Bytes()
+			},
+		},
+		{
+			name:      "BatchMixed_50",
+			batchSize: 50,
+			cmdBuilder: func(i int) []byte {
+				key := "key" + itoa(i%50)
+				var buf bytes.Buffer
+				if i%2 == 0 {
+					buf.WriteString("*2\r\n$3\r\nGET\r\n$")
+					buf.WriteString(itoa(len(key)))
+					buf.WriteString("\r\n")
+					buf.WriteString(key)
+					buf.WriteString("\r\n")
+				} else {
+					buf.WriteString("*3\r\n$3\r\nSET\r\n$")
+					buf.WriteString(itoa(len(key)))
+					buf.WriteString("\r\n")
+					buf.WriteString(key)
+					buf.WriteString("\r\n$5\r\nvalue\r\n")
+				}
+				return buf.Bytes()
+			},
+		},
+	}
+	
+	for _, sc := range scenarios {
+		b.Run(sc.name, func(b *testing.B) {
+			// Pre-build the batch
+			var buf bytes.Buffer
+			for i := 0; i < sc.batchSize; i++ {
+				buf.Write(sc.cmdBuilder(i))
+			}
+			batchData := buf.Bytes()
+			
+			b.ResetTimer()
+			b.ReportAllocs()
+			b.SetBytes(int64(len(batchData)))
+			
+			for i := 0; i < b.N; i++ {
+				r := NewReader(bytes.NewReader(batchData))
+				for j := 0; j < sc.batchSize; j++ {
+					_, err := r.ReadNext()
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkWriterBatch benchmarks writing multiple commands in sequence (batch operations)
+func BenchmarkWriterBatch(b *testing.B) {
+	scenarios := []struct {
+		name       string
+		batchSize  int
+		writeFunc  func(*Writer, int) error
+	}{
+		{
+			name:      "BatchSimpleString_10",
+			batchSize: 10,
+			writeFunc: func(w *Writer, i int) error {
+				return w.WriteSimpleString("OK")
+			},
+		},
+		{
+			name:      "BatchInteger_10",
+			batchSize: 10,
+			writeFunc: func(w *Writer, i int) error {
+				return w.WriteInteger(int64(i))
+			},
+		},
+		{
+			name:      "BatchBulkString_10",
+			batchSize: 10,
+			writeFunc: func(w *Writer, i int) error {
+				return w.WriteBulkString([]byte("value"))
+			},
+		},
+		{
+			name:      "BatchCommand_50",
+			batchSize: 50,
+			writeFunc: func(w *Writer, i int) error {
+				if i%2 == 0 {
+					return w.WriteCommand("GET", "key")
+				}
+				return w.WriteCommand("SET", "key", "value")
+			},
+		},
+		{
+			name:      "BatchCommand_100",
+			batchSize: 100,
+			writeFunc: func(w *Writer, i int) error {
+				return w.WriteCommand("SET", "key", "value")
+			},
+		},
+	}
+	
+	for _, sc := range scenarios {
+		b.Run(sc.name, func(b *testing.B) {
+			var buf bytes.Buffer
+			
+			b.ResetTimer()
+			b.ReportAllocs()
+			
+			for i := 0; i < b.N; i++ {
+				buf.Reset()
+				w := NewWriter(&buf)
+				
+				for j := 0; j < sc.batchSize; j++ {
+					if err := sc.writeFunc(w, j); err != nil {
+						b.Fatal(err)
+					}
+				}
+				
+				if err := w.Flush(); err != nil {
+					b.Fatal(err)
+				}
+			}
+			
+			b.SetBytes(int64(buf.Len()))
+		})
+	}
+}
