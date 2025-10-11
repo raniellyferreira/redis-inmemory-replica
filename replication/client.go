@@ -624,7 +624,8 @@ func (c *Client) performSync() error {
 		return fmt.Errorf("invalid PSYNC response: %s", responseStr)
 	}
 
-	if parts[0] == "FULLRESYNC" {
+	switch parts[0] {
+	case "FULLRESYNC":
 		if len(parts) < 3 {
 			return fmt.Errorf("invalid FULLRESYNC response: %s", responseStr)
 		}
@@ -641,12 +642,12 @@ func (c *Client) performSync() error {
 		if err := c.performFullSync(); err != nil {
 			return err
 		}
-	} else if parts[0] == "CONTINUE" {
+	case "CONTINUE":
 		// Partial resync successful - no RDB transfer needed
 		c.logger.Info("Partial resync successful - continuing replication stream")
 		// The master will start sending incremental commands directly
 		// No need to perform full sync
-	} else {
+	default:
 		return fmt.Errorf("unsupported PSYNC response: %s", responseStr)
 	}
 

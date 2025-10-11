@@ -200,7 +200,8 @@ func matchAutomaton(str, pattern string, strIdx, patIdx int, memo map[[2]int]boo
 
 	var result bool
 
-	if patChar == '*' {
+	switch patChar {
+	case '*':
 		// Try matching zero characters (move pattern index)
 		result = matchAutomaton(str, pattern, strIdx, patIdx+1, memo)
 
@@ -208,12 +209,17 @@ func matchAutomaton(str, pattern string, strIdx, patIdx int, memo map[[2]int]boo
 		if !result {
 			result = matchAutomaton(str, pattern, strIdx+1, patIdx, memo)
 		}
-	} else if patChar == '?' || patChar == strChar {
-		// Match single character or exact match
+	case '?':
+		// Match single character
 		result = matchAutomaton(str, pattern, strIdx+1, patIdx+1, memo)
-	} else {
-		// No match
-		result = false
+	default:
+		// Exact match required
+		if patChar == strChar {
+			result = matchAutomaton(str, pattern, strIdx+1, patIdx+1, memo)
+		} else {
+			// No match
+			result = false
+		}
 	}
 
 	memo[key] = result

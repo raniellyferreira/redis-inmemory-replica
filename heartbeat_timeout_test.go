@@ -141,7 +141,11 @@ func TestHeartbeatWriteTimeoutConfiguration(t *testing.T) {
 				return
 			}
 
-			defer replica.Close()
+			defer func() {
+				if err := replica.Close(); err != nil {
+					t.Logf("Failed to close replica: %v", err)
+				}
+			}()
 
 			// Verify the configuration was applied
 			status := replica.SyncStatus()

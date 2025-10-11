@@ -72,7 +72,11 @@ func TestGUIClientSupport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to replica: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("Failed to close connection: %v", err)
+		}
+	}()
 
 	reader := protocol.NewReader(conn)
 	writer := protocol.NewWriter(conn)

@@ -24,7 +24,7 @@ func BenchmarkConcurrentGet(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			// Populate with data
 			numKeys := 1000
@@ -66,7 +66,7 @@ func BenchmarkConcurrentSet(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
@@ -96,7 +96,7 @@ func BenchmarkConcurrentMixed(b *testing.B) {
 	for _, bc := range benchmarkCases {
 		b.Run(bc.name, func(b *testing.B) {
 			stor := NewMemoryWithShards(bc.numShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			// Populate with initial data
 			numKeys := 100
