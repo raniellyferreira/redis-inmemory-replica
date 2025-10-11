@@ -77,7 +77,7 @@ func TestShardedStorageConcurrency(t *testing.T) {
 // TestShardedStorageMixedOperations tests mixed read/write operations
 func TestShardedStorageMixedOperations(t *testing.T) {
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numGoroutines := 20
 	numOperations := 50
@@ -134,7 +134,7 @@ func TestShardedStorageMixedOperations(t *testing.T) {
 // TestShardedStorageWithExpiration tests sharded storage with expiring keys
 func TestShardedStorageWithExpiration(t *testing.T) {
 	stor := NewMemory()
-	defer stor.Close()
+	defer func() { _ = stor.Close() }()
 
 	numKeys := 1000
 	futureTime := time.Now().Add(1 * time.Hour)
@@ -188,7 +188,7 @@ func TestNewMemoryWithShards(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			stor := NewMemoryWithShards(tc.requestedShards)
-			defer stor.Close()
+			defer func() { _ = stor.Close() }()
 
 			if stor.shards != tc.expectedShards {
 				t.Errorf("Expected %d shards, got %d", tc.expectedShards, stor.shards)
