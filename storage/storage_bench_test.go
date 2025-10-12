@@ -241,7 +241,7 @@ func BenchmarkStorageConcurrentReads(b *testing.B) {
 	s := NewMemory()
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
-		s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+		_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 	}
 
 	b.ResetTimer()
@@ -268,7 +268,7 @@ func BenchmarkStorageConcurrentWrites(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := fmt.Sprintf("key_%d", i%1000)
-			s.Set(key, []byte("value"), nil)
+			_ = s.Set(key, []byte("value"), nil)
 			i++
 		}
 	})
@@ -279,7 +279,7 @@ func BenchmarkStorageConcurrentMixed(b *testing.B) {
 	s := NewMemory()
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
-		s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+		_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 	}
 
 	b.ResetTimer()
@@ -291,7 +291,7 @@ func BenchmarkStorageConcurrentMixed(b *testing.B) {
 			key := fmt.Sprintf("key_%d", i%1000)
 			if i%3 == 0 {
 				// 33% writes
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			} else {
 				// 67% reads
 				s.Get(key)
@@ -314,7 +314,7 @@ func BenchmarkStorageSharding(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%10000)
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			}
 		})
 	}
