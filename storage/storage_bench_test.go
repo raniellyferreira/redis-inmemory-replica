@@ -131,7 +131,7 @@ func BenchmarkStorageSetWithTTL(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%1000)
 				expiry := time.Now().Add(sc.ttl)
-				s.Set(key, data, &expiry)
+				_ = s.Set(key, data, &expiry)
 			}
 		})
 	}
@@ -143,7 +143,7 @@ func BenchmarkStorageDelete(b *testing.B) {
 		s := NewMemory()
 		// Pre-populate
 		for i := 0; i < 10000; i++ {
-			s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+			_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 		}
 
 		b.ResetTimer()
@@ -154,7 +154,7 @@ func BenchmarkStorageDelete(b *testing.B) {
 			s.Del(key)
 			// Re-add for next iteration
 			if i%100 == 0 {
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			}
 		}
 	})
