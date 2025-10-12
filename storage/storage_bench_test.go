@@ -16,7 +16,7 @@ func BenchmarkStorageGet(b *testing.B) {
 		{
 			name: "Hit_Small",
 			setup: func(s *MemoryStorage) {
-				s.Set("key", []byte("small"), nil)
+				_ = s.Set("key", []byte("small"), nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -24,7 +24,7 @@ func BenchmarkStorageGet(b *testing.B) {
 			name: "Hit_Medium",
 			setup: func(s *MemoryStorage) {
 				data := make([]byte, 1024) // 1KB
-				s.Set("key", data, nil)
+				_ = s.Set("key", data, nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -32,7 +32,7 @@ func BenchmarkStorageGet(b *testing.B) {
 			name: "Hit_Large",
 			setup: func(s *MemoryStorage) {
 				data := make([]byte, 1024*1024) // 1MB
-				s.Set("key", data, nil)
+				_ = s.Set("key", data, nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -60,11 +60,12 @@ func BenchmarkStorageGet(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				if sc.hitRatio == 1.0 {
+				switch sc.hitRatio {
+				case 1.0:
 					s.Get("key")
-				} else if sc.hitRatio == 0.0 {
+				case 0.0:
 					s.Get("nonexistent")
-				} else {
+				default:
 					// Mixed scenario
 					if i%2 == 0 {
 						s.Get("key1")

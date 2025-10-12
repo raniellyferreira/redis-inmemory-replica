@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"sync"
 )
 
 const (
@@ -22,29 +21,13 @@ const (
 
 var (
 	crlfBytes = []byte(CRLF)
-
-	// Buffer pools for reducing allocations
-	bulkStringPool = sync.Pool{
-		New: func() interface{} {
-			buf := make([]byte, 0, 1024) // Start with 1KB capacity
-			return &buf
-		},
-	}
-
-	arrayPool = sync.Pool{
-		New: func() interface{} {
-			arr := make([]Value, 0, 8) // Common array sizes
-			return &arr
-		},
-	}
 )
 
 // Reader is a streaming RESP protocol reader that efficiently parses
 // Redis protocol messages without unnecessary memory allocations
 type Reader struct {
 	br      *bufio.Reader
-	scratch []byte   // Reusable buffer for reading
-	intBuf  [20]byte // Reusable buffer for integer parsing
+	scratch []byte // Reusable buffer for reading
 }
 
 // NewReader creates a new streaming RESP reader
@@ -134,11 +117,14 @@ func parseInt64(b []byte) (int64, error) {
 	var neg bool
 	var i int
 
-	if b[0] == '-' {
+	switch b[0] {
+	case '-':
 		neg = true
 		i = 1
-	} else if b[0] == '+' {
+	case '+':
 		i = 1
+	default:
+		i = 0
 	}
 
 	if i >= len(b) {

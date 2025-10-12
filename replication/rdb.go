@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -45,16 +44,6 @@ const (
 	// Extended types for newer Redis versions
 	RDBTypeStreamListpacks2 = 19
 	RDBTypeStreamListpacks3 = 20
-)
-
-var (
-	// Buffer pool for RDB string reading
-	rdbStringPool = sync.Pool{
-		New: func() interface{} {
-			buf := make([]byte, 0, 4096) // 4KB initial capacity
-			return &buf
-		},
-	}
 )
 
 // RDB version compatibility strategy

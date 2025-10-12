@@ -91,7 +91,7 @@ func writeLength(buf *bytes.Buffer, length int) {
 	} else {
 		// 32-bit encoding
 		buf.WriteByte(0x80)
-		binary.Write(buf, binary.BigEndian, uint32(length))
+		_ = binary.Write(buf, binary.BigEndian, uint32(length))
 	}
 }
 
@@ -205,7 +205,7 @@ func BenchmarkRDBParseWithExpiry(b *testing.B) {
 	// Entry with millisecond expiry
 	expiry := time.Now().Add(time.Hour).UnixMilli()
 	buf.WriteByte(RDBOpcodeExpiryMs)
-	binary.Write(&buf, binary.LittleEndian, uint64(expiry))
+	_ = binary.Write(&buf, binary.LittleEndian, uint64(expiry))
 
 	// String type
 	buf.WriteByte(RDBTypeString)
