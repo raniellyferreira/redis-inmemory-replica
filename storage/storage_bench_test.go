@@ -44,8 +44,8 @@ func BenchmarkStorageGet(b *testing.B) {
 		{
 			name: "Mixed_50pct",
 			setup: func(s *MemoryStorage) {
-				s.Set("key1", []byte("value1"), nil)
-				s.Set("key2", []byte("value2"), nil)
+				_ = s.Set("key1", []byte("value1"), nil)
+				_ = s.Set("key2", []byte("value2"), nil)
 			},
 			hitRatio: 0.5,
 		},
@@ -101,7 +101,7 @@ func BenchmarkStorageSet(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%1000) // Cycle through 1000 keys
-				s.Set(key, data, nil)
+				_ = s.Set(key, data, nil)
 			}
 		})
 	}
