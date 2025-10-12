@@ -77,11 +77,11 @@ func New(opts ...Option) (*Replica, error) {
 	} else {
 		stor = storage.NewMemory() // Use default (64 shards)
 	}
-	
+
 	if cfg.maxMemory > 0 {
 		stor.SetMemoryLimit(cfg.maxMemory)
 	}
-	
+
 	// Set the default database
 	if cfg.defaultDatabase != 0 {
 		if err := stor.SelectDB(cfg.defaultDatabase); err != nil {

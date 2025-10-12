@@ -26,15 +26,15 @@ type scriptCacheEntry struct {
 // Engine provides Redis-compatible Lua script execution
 type Engine struct {
 	storage storage.Storage
-	
+
 	// Script cache with LRU eviction
-	scriptsMu    sync.RWMutex
-	scripts      map[string]*scriptCacheEntry
-	lruList      *list.List
-	maxScripts   int
-	cacheHits    uint64
-	cacheMisses  uint64
-	
+	scriptsMu   sync.RWMutex
+	scripts     map[string]*scriptCacheEntry
+	lruList     *list.List
+	maxScripts  int
+	cacheHits   uint64
+	cacheMisses uint64
+
 	// Lua state pool
 	statePool *sync.Pool
 }
@@ -57,18 +57,18 @@ func NewEngine(storage storage.Storage, opts ...EngineOption) *Engine {
 		lruList:    list.New(),
 		maxScripts: DefaultMaxScripts,
 	}
-	
+
 	for _, opt := range opts {
 		opt(e)
 	}
-	
+
 	// Initialize Lua state pool
 	e.statePool = &sync.Pool{
 		New: func() interface{} {
 			return lua.NewState()
 		},
 	}
-	
+
 	return e
 }
 
@@ -113,43 +113,43 @@ func (e *Engine) EvalSHA(sha1 string, keys []string, args []string) (interface{}
 	e.scriptsMu.RLock()
 	entry, exists := e.scripts[sha1]
 	e.scriptsMu.RUnlock()
-	
+
 	if !exists {
 		e.cacheMisses++
 		return nil, fmt.Errorf("NOSCRIPT No matching script. Please use EVAL")
 	}
-	
+
 	e.cacheHits++
-	
+
 	// Move to front of LRU list
 	e.scriptsMu.Lock()
 	e.lruList.MoveToFront(entry.key)
 	e.scriptsMu.Unlock()
-	
+
 	return e.Eval(entry.script, keys, args)
 }
 
 // LoadScript loads a script and returns its SHA1 hash
 func (e *Engine) LoadScript(script string) string {
 	hash := fmt.Sprintf("%x", sha1.Sum([]byte(script)))
-	
+
 	e.scriptsMu.Lock()
 	defer e.scriptsMu.Unlock()
-	
+
 	// Check if script already exists
 	if entry, exists := e.scripts[hash]; exists {
 		// Move to front
 		e.lruList.MoveToFront(entry.key)
 		return hash
 	}
-	
+
 	// Add new script
 	entry := &scriptCacheEntry{
 		script: script,
 	}
 	entry.key = e.lruList.PushFront(hash)
 	e.scripts[hash] = entry
-	
+
 	// Evict if cache is full
 	if e.lruList.Len() > e.maxScripts {
 		oldest := e.lruList.Back()
@@ -159,7 +159,7 @@ func (e *Engine) LoadScript(script string) string {
 			e.lruList.Remove(oldest)
 		}
 	}
-	
+
 	return hash
 }
 
@@ -167,7 +167,7 @@ func (e *Engine) LoadScript(script string) string {
 func (e *Engine) ScriptExists(hashes []string) []bool {
 	e.scriptsMu.RLock()
 	defer e.scriptsMu.RUnlock()
-	
+
 	results := make([]bool, len(hashes))
 	for i, hash := range hashes {
 		_, exists := e.scripts[hash]
@@ -180,7 +180,7 @@ func (e *Engine) ScriptExists(hashes []string) []bool {
 func (e *Engine) ScriptFlush() {
 	e.scriptsMu.Lock()
 	defer e.scriptsMu.Unlock()
-	
+
 	e.scripts = make(map[string]*scriptCacheEntry)
 	e.lruList.Init()
 	e.cacheHits = 0

@@ -8,10 +8,10 @@ import (
 // BenchmarkReaderParseSimpleString benchmarks parsing simple strings
 func BenchmarkReaderParseSimpleString(b *testing.B) {
 	input := []byte("+OK\r\n")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		r := NewReader(bytes.NewReader(input))
 		_, err := r.ReadNext()
@@ -24,10 +24,10 @@ func BenchmarkReaderParseSimpleString(b *testing.B) {
 // BenchmarkReaderParseError benchmarks parsing error messages
 func BenchmarkReaderParseError(b *testing.B) {
 	input := []byte("-ERR unknown command\r\n")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		r := NewReader(bytes.NewReader(input))
 		_, err := r.ReadNext()
@@ -40,10 +40,10 @@ func BenchmarkReaderParseError(b *testing.B) {
 // BenchmarkReaderParseInteger benchmarks parsing integers
 func BenchmarkReaderParseInteger(b *testing.B) {
 	input := []byte(":1234567890\r\n")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		r := NewReader(bytes.NewReader(input))
 		_, err := r.ReadNext()
@@ -63,7 +63,7 @@ func BenchmarkReaderParseBulkString(b *testing.B) {
 		{"Medium_1KB", bytes.Repeat([]byte("x"), 1024)},
 		{"Large_64KB", bytes.Repeat([]byte("x"), 64*1024)},
 	}
-	
+
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			var buf bytes.Buffer
@@ -73,11 +73,11 @@ func BenchmarkReaderParseBulkString(b *testing.B) {
 			buf.Write(size.data)
 			buf.WriteString("\r\n")
 			input := buf.Bytes()
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
 			b.SetBytes(int64(len(size.data)))
-			
+
 			for i := 0; i < b.N; i++ {
 				r := NewReader(bytes.NewReader(input))
 				_, err := r.ReadNext()
@@ -108,12 +108,12 @@ func BenchmarkReaderParseArray(b *testing.B) {
 			input: []byte("*10\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n$1\r\n5\r\n$1\r\n6\r\n$1\r\n7\r\n$1\r\n8\r\n$1\r\n9\r\n$2\r\n10\r\n"),
 		},
 	}
-	
+
 	for _, sc := range scenarios {
 		b.Run(sc.name, func(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				r := NewReader(bytes.NewReader(sc.input))
 				_, err := r.ReadNext()
@@ -148,12 +148,12 @@ func BenchmarkReaderParseCommand(b *testing.B) {
 			input: []byte("*2\r\n$4\r\nKEYS\r\n$1\r\n*\r\n"),
 		},
 	}
-	
+
 	for _, cmd := range commands {
 		b.Run(cmd.name, func(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				r := NewReader(bytes.NewReader(cmd.input))
 				_, err := r.ReadNext()
@@ -168,10 +168,10 @@ func BenchmarkReaderParseCommand(b *testing.B) {
 // BenchmarkWriterSimpleString benchmarks writing simple strings
 func BenchmarkWriterSimpleString(b *testing.B) {
 	var buf bytes.Buffer
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
 		w := NewWriter(&buf)
@@ -187,10 +187,10 @@ func BenchmarkWriterSimpleString(b *testing.B) {
 // BenchmarkWriterInteger benchmarks writing integers
 func BenchmarkWriterInteger(b *testing.B) {
 	var buf bytes.Buffer
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
 		w := NewWriter(&buf)
@@ -213,15 +213,15 @@ func BenchmarkWriterBulkString(b *testing.B) {
 		{"Medium_1KB", bytes.Repeat([]byte("x"), 1024)},
 		{"Large_64KB", bytes.Repeat([]byte("x"), 64*1024)},
 	}
-	
+
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			var buf bytes.Buffer
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
 			b.SetBytes(int64(len(size.data)))
-			
+
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
 				w := NewWriter(&buf)
@@ -265,14 +265,14 @@ func BenchmarkWriterArray(b *testing.B) {
 			}(),
 		},
 	}
-	
+
 	for _, sc := range scenarios {
 		b.Run(sc.name, func(b *testing.B) {
 			var buf bytes.Buffer
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
 				w := NewWriter(&buf)
@@ -310,14 +310,14 @@ func BenchmarkWriterCommand(b *testing.B) {
 			args: []string{"key", "value", "EX", "60"},
 		},
 	}
-	
+
 	for _, cmd := range commands {
 		b.Run(cmd.name, func(b *testing.B) {
 			var buf bytes.Buffer
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
 				w := NewWriter(&buf)
@@ -337,25 +337,25 @@ func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
-	
+
 	var buf [20]byte
 	i := len(buf) - 1
 	neg := n < 0
 	if neg {
 		n = -n
 	}
-	
+
 	for n > 0 {
 		buf[i] = byte('0' + n%10)
 		n /= 10
 		i--
 	}
-	
+
 	if neg {
 		buf[i] = '-'
 		i--
 	}
-	
+
 	return string(buf[i+1:])
 }
 
@@ -445,7 +445,7 @@ func BenchmarkReaderParseBatch(b *testing.B) {
 			},
 		},
 	}
-	
+
 	for _, sc := range scenarios {
 		b.Run(sc.name, func(b *testing.B) {
 			// Pre-build the batch
@@ -454,11 +454,11 @@ func BenchmarkReaderParseBatch(b *testing.B) {
 				buf.Write(sc.cmdBuilder(i))
 			}
 			batchData := buf.Bytes()
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
 			b.SetBytes(int64(len(batchData)))
-			
+
 			for i := 0; i < b.N; i++ {
 				r := NewReader(bytes.NewReader(batchData))
 				for j := 0; j < sc.batchSize; j++ {
@@ -475,9 +475,9 @@ func BenchmarkReaderParseBatch(b *testing.B) {
 // BenchmarkWriterBatch benchmarks writing multiple commands in sequence (batch operations)
 func BenchmarkWriterBatch(b *testing.B) {
 	scenarios := []struct {
-		name       string
-		batchSize  int
-		writeFunc  func(*Writer, int) error
+		name      string
+		batchSize int
+		writeFunc func(*Writer, int) error
 	}{
 		{
 			name:      "BatchSimpleString_10",
@@ -518,29 +518,29 @@ func BenchmarkWriterBatch(b *testing.B) {
 			},
 		},
 	}
-	
+
 	for _, sc := range scenarios {
 		b.Run(sc.name, func(b *testing.B) {
 			var buf bytes.Buffer
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
 				w := NewWriter(&buf)
-				
+
 				for j := 0; j < sc.batchSize; j++ {
 					if err := sc.writeFunc(w, j); err != nil {
 						b.Fatal(err)
 					}
 				}
-				
+
 				if err := w.Flush(); err != nil {
 					b.Fatal(err)
 				}
 			}
-			
+
 			b.SetBytes(int64(buf.Len()))
 		})
 	}

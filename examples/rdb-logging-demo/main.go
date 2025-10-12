@@ -38,7 +38,7 @@ func main() {
 	fmt.Println("==========================================")
 
 	logger := &exampleLogger{}
-	
+
 	// Create RDB stats with small batch size for demo
 	stats := replication.NewRDBLoadStats()
 	stats.BatchSize = 3 // Log every 3 keys for demo
@@ -48,12 +48,12 @@ func main() {
 
 	// Simulate processing keys
 	fmt.Println("Processing keys...")
-	stats.RecordKey(0, "string", logger)      // Key 1
-	stats.RecordKey(0, "string", logger)      // Key 2  
-	stats.RecordKey(0, "hash", logger)        // Key 3 - triggers first log
-	stats.RecordKey(1, "list", logger)        // Key 4
-	stats.RecordKey(1, "string", logger)      // Key 5
-	stats.RecordKey(0, "string", logger)      // Key 6 - triggers second log
+	stats.RecordKey(0, "string", logger) // Key 1
+	stats.RecordKey(0, "string", logger) // Key 2
+	stats.RecordKey(0, "hash", logger)   // Key 3 - triggers first log
+	stats.RecordKey(1, "list", logger)   // Key 4
+	stats.RecordKey(1, "string", logger) // Key 5
+	stats.RecordKey(0, "string", logger) // Key 6 - triggers second log
 
 	fmt.Println("\nFinal statistics:")
 	fmt.Println("-----------------")

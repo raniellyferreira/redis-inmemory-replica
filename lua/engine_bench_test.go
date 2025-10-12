@@ -246,9 +246,9 @@ func BenchmarkLuaEngine_MemoryUsage(b *testing.B) {
 func BenchmarkLuaEngine_VaryingKeysCardinality(b *testing.B) {
 	stor := storage.NewMemory()
 	engine := NewEngine(stor)
-	
+
 	keyCounts := []int{0, 1, 5, 10, 25, 50}
-	
+
 	for _, count := range keyCounts {
 		name := "Keys_" + itoa(count)
 		b.Run(name, func(b *testing.B) {
@@ -258,16 +258,16 @@ func BenchmarkLuaEngine_VaryingKeysCardinality(b *testing.B) {
 				script += "result[" + itoa(i) + "] = KEYS[" + itoa(i) + "] "
 			}
 			script += "return result"
-			
+
 			// Prepare keys array
 			keys := make([]string, count)
 			for i := 0; i < count; i++ {
 				keys[i] = "key_" + itoa(i)
 			}
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				_, err := engine.Eval(script, keys, []string{})
 				if err != nil {
@@ -282,9 +282,9 @@ func BenchmarkLuaEngine_VaryingKeysCardinality(b *testing.B) {
 func BenchmarkLuaEngine_VaryingArgsCardinality(b *testing.B) {
 	stor := storage.NewMemory()
 	engine := NewEngine(stor)
-	
+
 	argCounts := []int{0, 1, 5, 10, 25, 50}
-	
+
 	for _, count := range argCounts {
 		name := "Args_" + itoa(count)
 		b.Run(name, func(b *testing.B) {
@@ -294,16 +294,16 @@ func BenchmarkLuaEngine_VaryingArgsCardinality(b *testing.B) {
 				script += "result[" + itoa(i) + "] = ARGV[" + itoa(i) + "] "
 			}
 			script += "return result"
-			
+
 			// Prepare args array
 			args := make([]string, count)
 			for i := 0; i < count; i++ {
 				args[i] = "value_" + itoa(i)
 			}
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				_, err := engine.Eval(script, []string{}, args)
 				if err != nil {
@@ -319,25 +319,25 @@ func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
-	
+
 	var buf [20]byte
 	i := len(buf) - 1
 	neg := n < 0
 	if neg {
 		n = -n
 	}
-	
+
 	for n > 0 {
 		buf[i] = byte('0' + n%10)
 		n /= 10
 		i--
 	}
-	
+
 	if neg {
 		buf[i] = '-'
 		i--
 	}
-	
+
 	return string(buf[i+1:])
 }
 
@@ -345,7 +345,7 @@ func itoa(n int) string {
 func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
 	stor := storage.NewMemory()
 	engine := NewEngine(stor)
-	
+
 	scenarios := []struct {
 		name     string
 		keyCount int
@@ -356,7 +356,7 @@ func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
 		{"10k_10a", 10, 10},
 		{"25k_25a", 25, 25},
 	}
-	
+
 	for _, sc := range scenarios {
 		b.Run(sc.name, func(b *testing.B) {
 			// Script that processes both KEYS and ARGV
@@ -368,7 +368,7 @@ func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
 				end
 				return result
 			`
-			
+
 			// Prepare keys and args
 			keys := make([]string, sc.keyCount)
 			args := make([]string, sc.argCount)
@@ -378,10 +378,10 @@ func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
 			for i := 0; i < sc.argCount; i++ {
 				args[i] = "value_" + string(rune('a'+i%26))
 			}
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				_, err := engine.Eval(script, keys, args)
 				if err != nil {
@@ -396,12 +396,12 @@ func BenchmarkLuaEngine_KeysAndArgsCardinality(b *testing.B) {
 func BenchmarkLuaEngine_CachedVsUncached(b *testing.B) {
 	stor := storage.NewMemory()
 	engine := NewEngine(stor)
-	
+
 	script := "return redis.call('SET', KEYS[1], ARGV[1])"
 	sha := engine.LoadScript(script)
 	keys := []string{"benchmark_key"}
 	args := []string{"benchmark_value"}
-	
+
 	b.Run("Uncached_Eval", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -411,7 +411,7 @@ func BenchmarkLuaEngine_CachedVsUncached(b *testing.B) {
 			}
 		}
 	})
-	
+
 	b.Run("Cached_EvalSHA", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

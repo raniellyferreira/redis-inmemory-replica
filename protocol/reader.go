@@ -22,7 +22,7 @@ const (
 
 var (
 	crlfBytes = []byte(CRLF)
-	
+
 	// Buffer pools for reducing allocations
 	bulkStringPool = sync.Pool{
 		New: func() interface{} {
@@ -30,7 +30,7 @@ var (
 			return &buf
 		},
 	}
-	
+
 	arrayPool = sync.Pool{
 		New: func() interface{} {
 			arr := make([]Value, 0, 8) // Common array sizes
@@ -43,7 +43,7 @@ var (
 // Redis protocol messages without unnecessary memory allocations
 type Reader struct {
 	br      *bufio.Reader
-	scratch []byte // Reusable buffer for reading
+	scratch []byte   // Reusable buffer for reading
 	intBuf  [20]byte // Reusable buffer for integer parsing
 }
 
@@ -130,35 +130,35 @@ func parseInt64(b []byte) (int64, error) {
 	if len(b) == 0 {
 		return 0, strconv.ErrSyntax
 	}
-	
+
 	var neg bool
 	var i int
-	
+
 	if b[0] == '-' {
 		neg = true
 		i = 1
 	} else if b[0] == '+' {
 		i = 1
 	}
-	
+
 	if i >= len(b) {
 		return 0, strconv.ErrSyntax
 	}
-	
+
 	var n int64
 	for ; i < len(b); i++ {
 		if b[i] < '0' || b[i] > '9' {
 			return 0, strconv.ErrSyntax
 		}
-		
+
 		// Check for overflow
 		if n > (1<<63-1)/10 {
 			return 0, strconv.ErrRange
 		}
-		
+
 		n = n*10 + int64(b[i]-'0')
 	}
-	
+
 	if neg {
 		return -n, nil
 	}

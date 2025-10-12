@@ -29,18 +29,18 @@ func (m *MockConnection) SetWriteDeadline(t time.Time) error {
 func (m *MockConnection) Write(p []byte) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.writeCalls++
-	
+
 	// Simulate timeout if deadline has passed or on specific call
 	if m.timeoutOnCall > 0 && m.writeCalls == m.timeoutOnCall {
 		return 0, fmt.Errorf("write tcp 127.0.0.1:6379->127.0.0.1:12345: i/o timeout")
 	}
-	
+
 	if !m.writeDeadline.IsZero() && time.Now().After(m.writeDeadline.Add(time.Millisecond)) {
 		return 0, fmt.Errorf("write tcp 127.0.0.1:6379->127.0.0.1:12345: i/o timeout")
 	}
-	
+
 	return len(p), nil
 }
 
@@ -57,38 +57,38 @@ func (m *MockConnection) GetFlushCalls() int {
 }
 
 // Implement other net.Conn methods (not used in this test)
-func (m *MockConnection) Read(p []byte) (int, error)   { return 0, nil }
-func (m *MockConnection) Close() error                 { return nil }
-func (m *MockConnection) LocalAddr() net.Addr          { return nil }
-func (m *MockConnection) RemoteAddr() net.Addr         { return nil }
-func (m *MockConnection) SetDeadline(time.Time) error  { return nil }
+func (m *MockConnection) Read(p []byte) (int, error)      { return 0, nil }
+func (m *MockConnection) Close() error                    { return nil }
+func (m *MockConnection) LocalAddr() net.Addr             { return nil }
+func (m *MockConnection) RemoteAddr() net.Addr            { return nil }
+func (m *MockConnection) SetDeadline(time.Time) error     { return nil }
 func (m *MockConnection) SetReadDeadline(time.Time) error { return nil }
 
 func TestHeartbeatWriteDeadlineRenewal(t *testing.T) {
 	// Test that write deadline is properly renewed before REPLCONF ACK
-	
+
 	// This test simulates the scenario where:
 	// 1. Initial write deadline is set during connection (10s)
 	// 2. After 15 seconds, heartbeat tries to send REPLCONF ACK
 	// 3. Without deadline renewal, this would timeout
 	// 4. With proper renewal, it should succeed
-	
+
 	client := replication.NewClient("localhost:6379", nil)
 	client.SetWriteTimeout(5 * time.Second) // Short timeout for testing
-	
+
 	// This test validates that the write deadline renewal logic works correctly
 	// by confirming that heartbeat configuration accepts reasonable intervals
 	// that would exceed the initial write timeout
-	
+
 	// Test with heartbeat interval longer than write timeout
 	client.SetHeartbeatInterval(10 * time.Second) // Longer than write timeout
-	
+
 	// If heartbeat worked properly, the client should have the expected interval
 	stats := client.Stats()
 	if stats.MasterAddr != "localhost:6379" {
 		t.Errorf("Expected master addr localhost:6379, got %s", stats.MasterAddr)
 	}
-	
+
 	// Test successful configuration - this validates the fix is in place
 	t.Log("Heartbeat deadline renewal mechanism properly configured")
 }
@@ -101,7 +101,7 @@ func TestHeartbeatWriteTimeoutConfiguration(t *testing.T) {
 		expectConfigSuccess bool
 	}{
 		{
-			name:                "heartbeat_longer_than_write_timeout", 
+			name:                "heartbeat_longer_than_write_timeout",
 			writeTimeout:        2 * time.Second,
 			heartbeatInterval:   5 * time.Second, // This used to cause timeouts
 			expectConfigSuccess: true,
@@ -153,7 +153,7 @@ func TestHeartbeatWriteTimeoutConfiguration(t *testing.T) {
 				t.Errorf("Expected master host localhost:6379, got %s", status.MasterHost)
 			}
 
-			t.Logf("Successfully configured heartbeat interval %v with write timeout %v", 
+			t.Logf("Successfully configured heartbeat interval %v with write timeout %v",
 				tt.heartbeatInterval, tt.writeTimeout)
 		})
 	}
@@ -164,11 +164,11 @@ func TestHeartbeatRetryLogic(t *testing.T) {
 	client := replication.NewClient("localhost:6379", nil)
 	client.SetWriteTimeout(1 * time.Second)
 	client.SetHeartbeatInterval(100 * time.Millisecond) // Fast for testing
-	
+
 	// This test validates that the retry logic is in place by checking
 	// that the client configuration accepts fast heartbeat intervals
 	// which would stress-test the retry mechanisms
-	
+
 	stats := client.Stats()
 	if !stats.Connected {
 		// Expected - not connected to real Redis
@@ -191,7 +191,7 @@ func TestTCPKeepAliveConfiguration(t *testing.T) {
 			t.Logf("Failed to close replica: %v", err)
 		}
 	}()
-	
+
 	// TCP keepalive is configured in the connection setup
 	// This test validates that it doesn't break the configuration
 	t.Log("TCP keepalive configuration validated")
@@ -200,13 +200,13 @@ func TestTCPKeepAliveConfiguration(t *testing.T) {
 func TestWriteSerialization(t *testing.T) {
 	// Test that write operations are properly serialized
 	client := replication.NewClient("localhost:6379", nil)
-	
+
 	// Multiple goroutines trying to write concurrently should be serialized
 	// This test validates that the write mutex is in place
-	
+
 	var wg sync.WaitGroup
 	errors := make(chan error, 3)
-	
+
 	// Simulate concurrent write attempts
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
@@ -219,15 +219,15 @@ func TestWriteSerialization(t *testing.T) {
 			}
 		}(i)
 	}
-	
+
 	wg.Wait()
 	close(errors)
-	
+
 	// Check for any errors
 	for err := range errors {
 		t.Error(err)
 	}
-	
+
 	t.Log("Write serialization mechanism validated")
 }
 
@@ -243,7 +243,7 @@ func TestImprovedHeartbeatInterval(t *testing.T) {
 			t.Logf("Failed to close replica: %v", err)
 		}
 	}()
-	
+
 	// The default should now be 10s instead of 30s
 	// We can't directly check the interval, but we can verify the configuration succeeds
 	t.Log("Improved heartbeat interval (10s default) configured successfully")

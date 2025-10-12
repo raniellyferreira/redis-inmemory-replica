@@ -53,25 +53,25 @@ type Client struct {
 	onSyncComplete []func()
 
 	// Configuration
-	logger         Logger
-	metrics        MetricsCollector
-	syncTimeout    time.Duration
-	connectTimeout time.Duration
-	readTimeout    time.Duration
-	writeTimeout   time.Duration
-	commandFilters map[string]struct{}
-	databases      map[int]struct{} // Which databases to replicate (empty = all)
-	heartbeatInterval time.Duration   // How often to send REPLCONF ACK during streaming
+	logger            Logger
+	metrics           MetricsCollector
+	syncTimeout       time.Duration
+	connectTimeout    time.Duration
+	readTimeout       time.Duration
+	writeTimeout      time.Duration
+	commandFilters    map[string]struct{}
+	databases         map[int]struct{} // Which databases to replicate (empty = all)
+	heartbeatInterval time.Duration    // How often to send REPLCONF ACK during streaming
 
 	// Heartbeat state
 	heartbeatStop chan struct{}
 	heartbeatDone chan struct{}
-	
+
 	// Write serialization to prevent race conditions between heartbeat and main replication
 	writeMu sync.Mutex
-	
+
 	// Heartbeat retry tracking
-	heartbeatFailures int
+	heartbeatFailures    int
 	maxHeartbeatFailures int
 }
 
@@ -134,7 +134,7 @@ func NewRDBLoadStats() *RDBLoadStats {
 	return &RDBLoadStats{
 		StartTime:     time.Now(),
 		DatabaseStats: make(map[int]*DatabaseStats),
-		BatchSize:     100,  // Log every 100 keys by default
+		BatchSize:     100,             // Log every 100 keys by default
 		LogInterval:   2 * time.Second, // Or every 2 seconds
 		LastLogTime:   time.Now(),
 	}
@@ -146,22 +146,22 @@ func (stats *RDBLoadStats) RecordKey(db int, keyType string, logger Logger) {
 	defer stats.mu.Unlock()
 
 	stats.ProcessedKeys++
-	
+
 	// Initialize database stats if needed
 	if stats.DatabaseStats[db] == nil {
 		stats.DatabaseStats[db] = &DatabaseStats{
 			TypeCounts: make(map[string]int64),
 		}
 	}
-	
+
 	dbStats := stats.DatabaseStats[db]
 	dbStats.Keys++
 	dbStats.TypeCounts[keyType]++
 
 	// Check if we should log progress
 	now := time.Now()
-	shouldLog := stats.ProcessedKeys%int64(stats.BatchSize) == 0 || 
-				now.Sub(stats.LastLogTime) >= stats.LogInterval
+	shouldLog := stats.ProcessedKeys%int64(stats.BatchSize) == 0 ||
+		now.Sub(stats.LastLogTime) >= stats.LogInterval
 
 	if shouldLog {
 		stats.LastLogTime = now
@@ -173,7 +173,7 @@ func (stats *RDBLoadStats) RecordKey(db int, keyType string, logger Logger) {
 func (stats *RDBLoadStats) RecordError(db int) {
 	stats.mu.Lock()
 	defer stats.mu.Unlock()
-	
+
 	stats.ErrorCount++
 	if stats.DatabaseStats[db] != nil {
 		stats.DatabaseStats[db].ErrorCount++
@@ -191,15 +191,15 @@ func (stats *RDBLoadStats) LogFinal(logger Logger) {
 func (stats *RDBLoadStats) logProgress(logger Logger) {
 	elapsed := time.Since(stats.StartTime)
 	rate := float64(stats.ProcessedKeys) / elapsed.Seconds()
-	
+
 	for db, dbStats := range stats.DatabaseStats {
 		// Build type distribution string
 		typeInfo := make([]string, 0, len(dbStats.TypeCounts))
 		for typeName, count := range dbStats.TypeCounts {
 			typeInfo = append(typeInfo, fmt.Sprintf("%s:%d", typeName, count))
 		}
-		
-		logger.Info("RDB load progress", 
+
+		logger.Info("RDB load progress",
 			"db", db,
 			"keys", dbStats.Keys,
 			"types", strings.Join(typeInfo, ","),
@@ -214,22 +214,22 @@ func NewClient(masterAddr string, stor storage.Storage) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Client{
-		masterAddr:        masterAddr,
-		storage:           stor,
-		ctx:               ctx,
-		cancel:            cancel,
-		stopChan:          make(chan struct{}),
-		doneChan:          make(chan struct{}),
-		stats:             &ReplicationStats{MasterAddr: masterAddr},
-		syncTimeout:       30 * time.Second,
-		connectTimeout:    5 * time.Second,
-		readTimeout:       30 * time.Second,
-		writeTimeout:      10 * time.Second,
-		commandFilters:         make(map[string]struct{}),
-		databases:              make(map[int]struct{}), // empty = replicate all
-		heartbeatInterval:      10 * time.Second,       // Send REPLCONF ACK every 10 seconds - aligned with Redis repl-ping-slave-period default
-		maxHeartbeatFailures:   3,                      // Allow 3 consecutive heartbeat failures before triggering reconnection
-		logger:                 &defaultLogger{},
+		masterAddr:           masterAddr,
+		storage:              stor,
+		ctx:                  ctx,
+		cancel:               cancel,
+		stopChan:             make(chan struct{}),
+		doneChan:             make(chan struct{}),
+		stats:                &ReplicationStats{MasterAddr: masterAddr},
+		syncTimeout:          30 * time.Second,
+		connectTimeout:       5 * time.Second,
+		readTimeout:          30 * time.Second,
+		writeTimeout:         10 * time.Second,
+		commandFilters:       make(map[string]struct{}),
+		databases:            make(map[int]struct{}), // empty = replicate all
+		heartbeatInterval:    10 * time.Second,       // Send REPLCONF ACK every 10 seconds - aligned with Redis repl-ping-slave-period default
+		maxHeartbeatFailures: 3,                      // Allow 3 consecutive heartbeat failures before triggering reconnection
+		logger:               &defaultLogger{},
 	}
 }
 
@@ -565,7 +565,7 @@ func (c *Client) authenticate() error {
 	// Serialize writes to prevent race conditions
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	
+
 	if err := c.writer.WriteCommand("AUTH", c.masterPassword); err != nil {
 		return err
 	}
@@ -682,7 +682,7 @@ func (c *Client) sendPSYNC() error {
 	// Serialize writes to prevent race conditions
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	
+
 	// If we have a valid replication ID and offset, attempt partial sync
 	c.mu.RLock()
 	replID := c.replID
@@ -712,13 +712,8 @@ func (c *Client) performFullSync() error {
 	// Create RDB load statistics tracker
 	stats := NewRDBLoadStats()
 
-	// Create RDB handler
-	handler := &rdbStorageHandler{
-		storage:   c.storage,
-		logger:    c.logger,
-		databases: c.databases,
-		stats:     stats,
-	}
+	// Create RDB handler with batching support
+	handler := newRDBStorageHandler(c.storage, c.logger, c.databases, stats)
 
 	// Create RDB stream reader that collects chunks
 	rdbBuffer := &rdbStreamBuffer{
@@ -797,7 +792,7 @@ func (c *Client) streamCommands() error {
 			return fmt.Errorf("failed to remove read timeout for streaming: %w", err)
 		}
 		c.logger.Debug("Removed read timeout for replication streaming")
-		
+
 		// Also remove write timeout during streaming to prevent heartbeat timeouts
 		// Write deadline will be set per-operation in heartbeat ACK
 		if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
@@ -1045,9 +1040,34 @@ type rdbStorageHandler struct {
 	databases map[int]struct{} // Which databases to replicate (empty = all)
 	currentDB int
 	stats     *RDBLoadStats
+
+	// Batching support
+	batchSize   int
+	keyBatch    []string
+	valueBatch  [][]byte
+	expiryBatch []*time.Time
+}
+
+// newRDBStorageHandler creates a new RDB storage handler with batching support
+func newRDBStorageHandler(storage storage.Storage, logger Logger, databases map[int]struct{}, stats *RDBLoadStats) *rdbStorageHandler {
+	return &rdbStorageHandler{
+		storage:     storage,
+		logger:      logger,
+		databases:   databases,
+		stats:       stats,
+		batchSize:   100, // Flush every 100 keys to reduce lock contention
+		keyBatch:    make([]string, 0, 100),
+		valueBatch:  make([][]byte, 0, 100),
+		expiryBatch: make([]*time.Time, 0, 100),
+	}
 }
 
 func (h *rdbStorageHandler) OnDatabase(index int) error {
+	// Flush any pending batch before switching databases
+	if err := h.flushBatch(); err != nil {
+		return err
+	}
+
 	h.currentDB = index
 
 	// Skip database if not in filter list (when filter is set)
@@ -1088,11 +1108,14 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 
 	switch v := value.(type) {
 	case []byte:
-		err := h.storage.Set(string(key), v, expiry)
-		if err != nil {
-			h.logger.Error("Failed to set key in storage", "key", string(key), "error", err)
-			h.stats.RecordError(h.currentDB)
-			return err
+		// Add to batch
+		h.keyBatch = append(h.keyBatch, string(key))
+		h.valueBatch = append(h.valueBatch, v)
+		h.expiryBatch = append(h.expiryBatch, expiry)
+
+		// Flush batch if it's full
+		if len(h.keyBatch) >= h.batchSize {
+			return h.flushBatch()
 		}
 		return nil
 	default:
@@ -1101,12 +1124,61 @@ func (h *rdbStorageHandler) OnKey(key []byte, value interface{}, expiry *time.Ti
 	}
 }
 
+// flushBatch writes all batched keys to storage
+func (h *rdbStorageHandler) flushBatch() error {
+	if len(h.keyBatch) == 0 {
+		return nil
+	}
+
+	// Process all keys in the batch
+	for i := 0; i < len(h.keyBatch); i++ {
+		err := h.storage.Set(h.keyBatch[i], h.valueBatch[i], h.expiryBatch[i])
+		if err != nil {
+			h.logger.Error("Failed to set key in storage", "key", h.keyBatch[i], "error", err)
+			h.stats.RecordError(h.currentDB)
+			// Continue processing other keys instead of failing completely
+		}
+	}
+
+	// Reset batch slices (reuse capacity)
+	h.keyBatch = h.keyBatch[:0]
+	h.valueBatch = h.valueBatch[:0]
+	h.expiryBatch = h.expiryBatch[:0]
+
+	return nil
+}
+
 func (h *rdbStorageHandler) OnAux(key, value []byte) error {
 	h.logger.Debug("RDB aux field", "key", string(key), "value", string(value))
 	return nil
 }
 
+// OnResizeDB implements RDBResizeHandler for pre-sizing allocations
+func (h *rdbStorageHandler) OnResizeDB(dbSize, expiresSize uint64) error {
+	// Pre-size batch slices based on expected database size
+	// Use smaller of dbSize or batchSize to avoid over-allocation
+	capacity := int(dbSize)
+	if capacity > h.batchSize {
+		capacity = h.batchSize
+	}
+
+	// Pre-allocate batch slices if they're empty
+	if cap(h.keyBatch) < capacity {
+		h.keyBatch = make([]string, 0, capacity)
+		h.valueBatch = make([][]byte, 0, capacity)
+		h.expiryBatch = make([]*time.Time, 0, capacity)
+	}
+
+	h.logger.Debug("RDB resize hint received", "dbSize", dbSize, "expiresSize", expiresSize)
+	return nil
+}
+
 func (h *rdbStorageHandler) OnEnd() error {
+	// Flush any remaining keys
+	if err := h.flushBatch(); err != nil {
+		return err
+	}
+
 	// Log final statistics
 	h.stats.LogFinal(h.logger)
 	return nil
@@ -1136,12 +1208,12 @@ func newRDBChunkAggregator(logger Logger) *rdbChunkAggregator {
 func (agg *rdbChunkAggregator) addChunk(size int) {
 	agg.chunkCount++
 	agg.totalSize += size
-	
+
 	// Log every N chunks or if we've received a significant amount of data
 	if agg.chunkCount%agg.logThreshold == 0 || agg.totalSize%agg.sizeThreshold == 0 {
 		elapsed := time.Since(agg.startTime)
 		rate := float64(agg.totalSize) / elapsed.Seconds()
-		agg.logger.Debug("RDB chunk progress", 
+		agg.logger.Debug("RDB chunk progress",
 			"chunks", agg.chunkCount,
 			"totalSize", agg.totalSize,
 			"elapsed", elapsed.Round(10*time.Millisecond),
@@ -1153,8 +1225,8 @@ func (agg *rdbChunkAggregator) addChunk(size int) {
 func (agg *rdbChunkAggregator) logFinal() {
 	elapsed := time.Since(agg.startTime)
 	rate := float64(agg.totalSize) / elapsed.Seconds()
-	agg.logger.Debug("RDB data reading completed", 
-		"totalSize", agg.totalSize, 
+	agg.logger.Debug("RDB data reading completed",
+		"totalSize", agg.totalSize,
 		"chunks", agg.chunkCount,
 		"elapsed", elapsed.Round(10*time.Millisecond),
 		"rate", fmt.Sprintf("%.1f KB/s", rate/1024))
@@ -1268,7 +1340,7 @@ func (c *Client) startHeartbeat() {
 
 	// Reset failure counter when starting new heartbeat session
 	c.heartbeatFailures = 0
-	
+
 	c.heartbeatStop = make(chan struct{})
 	c.heartbeatDone = make(chan struct{})
 
@@ -1288,7 +1360,7 @@ func (c *Client) startHeartbeat() {
 			case <-ticker.C:
 				if err := c.sendReplconfACK(); err != nil {
 					c.heartbeatFailures++
-					
+
 					// Classify heartbeat errors for better handling
 					errStr := err.Error()
 					if strings.Contains(errStr, "not connected") {
@@ -1301,7 +1373,7 @@ func (c *Client) startHeartbeat() {
 						c.heartbeatFailures = 0
 					} else if strings.Contains(errStr, "i/o timeout") {
 						c.logger.Debug("Heartbeat ACK timeout", "error", err, "failures", c.heartbeatFailures)
-						
+
 						// For timeout errors, check if we've exceeded the failure threshold
 						if c.heartbeatFailures >= c.maxHeartbeatFailures {
 							c.logger.Error("Too many consecutive heartbeat failures, may indicate connection issues",
@@ -1339,7 +1411,7 @@ func (c *Client) sendReplconfACK() error {
 	// Serialize writes to prevent race conditions between heartbeat and main replication
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	
+
 	c.mu.RLock()
 	writer := c.writer
 	offset := c.replOffset

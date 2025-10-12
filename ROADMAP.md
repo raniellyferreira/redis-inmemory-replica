@@ -157,7 +157,7 @@ BenchmarkLuaEngine_EvalSHA-4           13088     92695 ns/op   219217 B/op  868 
 
 ### Phase B — Tactical Interventions (Incremental and Testable)
 
-**Status: ✅ MOSTLY COMPLETE**
+**Status: ✅ COMPLETE**
 
 Each item will be implemented in focused PRs/commits with before/after measurements:
 
@@ -177,11 +177,14 @@ Each item will be implemented in focused PRs/commits with before/after measureme
 - **Current:** StorageGet/Hit_Small: 39.95 ns/op
 - **Improvement:** 25% ↓ latency in Get operations 🎉
 
-#### B3. RDB Parser Optimization ⚠️ DEFERRED
-- [ ] Implement batching per shard (requires handler redesign)
-- [ ] Add reusable buffer pools for decoding
-- [ ] Pre-size maps when count is known from RDB metadata
-- **Note:** Deferred due to complexity; requires breaking changes to RDBHandler interface
+#### B3. RDB Parser Optimization ✅ COMPLETE
+- [x] Implement batching per shard (batch size: 100 keys)
+- [x] Add reusable buffer capacity via batch reuse
+- [x] Pre-size batches when ResizeDB hints are available
+- [x] Optional RDBResizeHandler interface for backward compatibility
+- **Result:** Batching reduces lock contention during bulk import
+- **Implementation:** Batch flushes every 100 keys, pre-sizes on ResizeDB opcode
+- **Compatibility:** No breaking changes - uses interface type assertion pattern
 
 #### B4. Lua Cache Enhancement ✅ COMPLETE
 - [x] Implement bounded cache with size limit (default: 1000 scripts)
