@@ -180,7 +180,7 @@ func BenchmarkStorageKeys(b *testing.B) {
 			s := NewMemory()
 			// Pre-populate
 			for i := 0; i < size; i++ {
-				s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+				_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 			}
 
 			b.ResetTimer()
@@ -217,11 +217,11 @@ func BenchmarkStorageExpirationCheck(b *testing.B) {
 				if i < expiredCount {
 					// Already expired
 					expiry := time.Now().Add(-time.Second)
-					s.Set(key, []byte("value"), &expiry)
+					_ = s.Set(key, []byte("value"), &expiry)
 				} else {
 					// Not expired
 					expiry := time.Now().Add(time.Hour)
-					s.Set(key, []byte("value"), &expiry)
+					_ = s.Set(key, []byte("value"), &expiry)
 				}
 			}
 
