@@ -221,7 +221,7 @@ func TestMemoryOptions(t *testing.T) {
 	t.Run("Default configuration", func(t *testing.T) {
 		stor := NewMemory()
 		defer func() { _ = stor.Close() }()
-		
+
 		if stor.shards != 64 {
 			t.Errorf("Expected 64 default shards, got %d", stor.shards)
 		}
@@ -233,7 +233,7 @@ func TestMemoryOptions(t *testing.T) {
 	t.Run("WithShardCount option", func(t *testing.T) {
 		stor := NewMemory(WithShardCount(128))
 		defer func() { _ = stor.Close() }()
-		
+
 		if stor.shards != 128 {
 			t.Errorf("Expected 128 shards, got %d", stor.shards)
 		}
@@ -245,7 +245,7 @@ func TestMemoryOptions(t *testing.T) {
 	t.Run("WithShardCount rounds to power of 2", func(t *testing.T) {
 		stor := NewMemory(WithShardCount(100))
 		defer func() { _ = stor.Close() }()
-		
+
 		if stor.shards != 128 {
 			t.Errorf("Expected 128 shards (rounded from 100), got %d", stor.shards)
 		}
@@ -256,7 +256,7 @@ func TestMemoryOptions(t *testing.T) {
 			WithShardCount(32),
 		)
 		defer func() { _ = stor.Close() }()
-		
+
 		if stor.shards != 32 {
 			t.Errorf("Expected 32 shards, got %d", stor.shards)
 		}

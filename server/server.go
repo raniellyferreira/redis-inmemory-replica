@@ -18,9 +18,9 @@ import (
 
 // Server provides Redis protocol server functionality
 type Server struct {
-	storage   storage.Storage
-	lua       *lua.Engine
-	syncMgr   *replication.SyncManager
+	storage storage.Storage
+	lua     *lua.Engine
+	syncMgr *replication.SyncManager
 
 	// Server configuration
 	addr     string
@@ -606,13 +606,13 @@ func (c *Client) handleKeys(cmd *protocol.Command) {
 
 	pattern := string(cmd.Args[0])
 	matchingKeys := c.server.storage.Keys(pattern)
-	
+
 	// Convert to interface{} slice for writeArray
 	result := make([]interface{}, len(matchingKeys))
 	for i, key := range matchingKeys {
 		result[i] = key
 	}
-	
+
 	c.writeArray(result)
 }
 
@@ -657,13 +657,13 @@ func (c *Client) handleScan(cmd *protocol.Command) {
 	}
 
 	newCursor, keys := c.server.storage.Scan(cursor, pattern, count)
-	
+
 	// Convert keys to interface slice
 	keyInterfaces := make([]interface{}, len(keys))
 	for i, key := range keys {
 		keyInterfaces[i] = key
 	}
-	
+
 	result := []interface{}{
 		strconv.FormatInt(newCursor, 10),
 		keyInterfaces,
@@ -691,7 +691,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 	}
 
 	var info strings.Builder
-	
+
 	for _, section := range sections {
 		switch section {
 		case "all", "server":
@@ -702,31 +702,31 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			info.WriteString("os:Linux\r\n")
 			info.WriteString("\r\n")
 		}
-		
+
 		if section == "all" || section == "replication" {
 			info.WriteString("# Replication\r\n")
 			info.WriteString("role:slave\r\n")
-			
+
 			if c.server.syncMgr != nil {
 				status := c.server.syncMgr.SyncStatus()
 				info.WriteString(fmt.Sprintf("master_host:%s\r\n", status.MasterHost))
-				
+
 				if status.Connected {
 					info.WriteString("master_link_status:up\r\n")
 				} else {
 					info.WriteString("master_link_status:down\r\n")
 				}
-				
+
 				// Calculate seconds since last sync
 				lastIO := int64(time.Since(status.LastSyncTime).Seconds())
 				info.WriteString(fmt.Sprintf("master_last_io_seconds_ago:%d\r\n", lastIO))
-				
+
 				if status.InitialSyncCompleted {
 					info.WriteString("master_sync_in_progress:0\r\n")
 				} else {
 					info.WriteString("master_sync_in_progress:1\r\n")
 				}
-				
+
 				info.WriteString(fmt.Sprintf("master_repl_offset:%d\r\n", status.ReplicationOffset))
 			} else {
 				info.WriteString("master_host:unknown\r\n")
@@ -737,7 +737,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			}
 			info.WriteString("\r\n")
 		}
-		
+
 		if section == "all" || section == "memory" {
 			info.WriteString("# Memory\r\n")
 			memoryUsage := c.server.storage.MemoryUsage()
@@ -745,7 +745,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 			info.WriteString(fmt.Sprintf("used_memory_human:%s\r\n", formatBytes(memoryUsage)))
 			info.WriteString("\r\n")
 		}
-		
+
 		if section == "all" || section == "keyspace" {
 			// Get database information for keyspace section
 			dbInfo := c.server.storage.DatabaseInfo()
@@ -778,7 +778,7 @@ func (c *Client) handleRole(cmd *protocol.Command) {
 	}
 
 	role := []interface{}{"slave"}
-	
+
 	if c.server.syncMgr != nil {
 		status := c.server.syncMgr.SyncStatus()
 		// Parse master host and port
@@ -797,7 +797,7 @@ func (c *Client) handleRole(cmd *protocol.Command) {
 	} else {
 		role = append(role, "unknown", int64(6379), int64(0))
 	}
-	
+
 	c.writeArray(role)
 }
 

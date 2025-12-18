@@ -49,7 +49,7 @@ func TestGUIClientSupport(t *testing.T) {
 
 	// Add test data to multiple databases
 	storage := replica.Storage()
-	
+
 	// Add data to database 0
 	if err := storage.Set("key1", []byte("value1"), nil); err != nil {
 		t.Fatalf("Failed to set key1: %v", err)
@@ -57,7 +57,7 @@ func TestGUIClientSupport(t *testing.T) {
 	if err := storage.Set("key2", []byte("value2"), nil); err != nil {
 		t.Fatalf("Failed to set key2: %v", err)
 	}
-	
+
 	// Switch to database 1 and add data
 	if err := storage.SelectDB(1); err != nil {
 		t.Fatalf("Failed to select database 1: %v", err)
@@ -65,7 +65,7 @@ func TestGUIClientSupport(t *testing.T) {
 	if err := storage.Set("db1key1", []byte("db1value1"), nil); err != nil {
 		t.Fatalf("Failed to set db1key1: %v", err)
 	}
-	
+
 	// Switch back to database 0
 	if err := storage.SelectDB(0); err != nil {
 		t.Fatalf("Failed to select database 0: %v", err)
@@ -131,7 +131,7 @@ func TestGUIClientSupport(t *testing.T) {
 		}
 
 		infoOutput := string(response.Data)
-		
+
 		if !strings.Contains(infoOutput, "# Keyspace") {
 			t.Error("Expected '# Keyspace' section in INFO output")
 		}
@@ -166,7 +166,7 @@ func TestGUIClientSupport(t *testing.T) {
 		}
 
 		infoOutput := string(response.Data)
-		
+
 		// Should include all standard sections plus keyspace
 		if !strings.Contains(infoOutput, "# Server") {
 			t.Error("Expected '# Server' section in INFO all output")
@@ -296,19 +296,19 @@ func TestReplicationStartStopIdempotent(t *testing.T) {
 	// Test multiple close calls (should be idempotent)
 	for i := 0; i < 3; i++ {
 		t.Logf("Close call %d", i+1)
-		
+
 		err := replica.Close()
 		if err != nil {
 			t.Fatalf("Close failed on call %d: %v", i+1, err)
 		}
 	}
-	
+
 	t.Log("Multiple close calls completed successfully")
-	
+
 	// Test that operations after close return appropriate errors
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	
+
 	err = replica.Start(ctx)
 	if err == nil {
 		t.Error("Expected error when starting closed replica")

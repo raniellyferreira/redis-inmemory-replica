@@ -14,10 +14,10 @@ import (
 func TestSyncManagerConcurrentWaitForSync(t *testing.T) {
 	// Use an in-memory storage for testing
 	stor := storage.NewMemory()
-	
+
 	// Create sync manager (note: we won't actually start it to avoid network dependencies)
 	sm := NewSyncManager("localhost:6379", stor)
-	
+
 	// Set a mock logger that doesn't output
 	sm.SetLogger(&testLogger{t: t})
 
@@ -25,7 +25,7 @@ func TestSyncManagerConcurrentWaitForSync(t *testing.T) {
 	const numWaiters = 10
 	var wg sync.WaitGroup
 	errors := make(chan error, numWaiters)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -82,7 +82,7 @@ func TestSyncManagerConcurrentWaitForSync(t *testing.T) {
 	}
 }
 
-// TestSyncManagerWaitForSyncAfterCompletion tests that WaitForSync returns immediately 
+// TestSyncManagerWaitForSyncAfterCompletion tests that WaitForSync returns immediately
 // when sync is already complete
 func TestSyncManagerWaitForSyncAfterCompletion(t *testing.T) {
 	stor := storage.NewMemory()
@@ -121,7 +121,7 @@ func TestSyncManagerCallbackSafety(t *testing.T) {
 	// Add multiple callbacks
 	callbackCount := 0
 	var mu sync.Mutex
-	
+
 	for i := 0; i < 5; i++ {
 		sm.OnSyncComplete(func() {
 			mu.Lock()

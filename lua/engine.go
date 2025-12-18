@@ -1,6 +1,7 @@
 package lua
 
 import (
+	"container/list"
 	"crypto/sha1"
 	"fmt"
 	"sync"
@@ -9,23 +10,89 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+const (
+	// DefaultMaxScripts is the default maximum number of cached scripts
+	DefaultMaxScripts = 1000
+	// DefaultMaxLuaStates is the number of Lua states to pool
+	DefaultMaxLuaStates = 10
+)
+
+// scriptCacheEntry represents a cached script
+type scriptCacheEntry struct {
+	script string
+	key    *list.Element // Element in LRU list
+}
+
 // Engine provides Redis-compatible Lua script execution
 type Engine struct {
 	storage storage.Storage
-	scripts sync.Map // map[string]string - SHA1 -> script content
+
+	// Script cache with LRU eviction
+	scriptsMu   sync.RWMutex
+	scripts     map[string]*scriptCacheEntry
+	lruList     *list.List
+	maxScripts  int
+	cacheHits   uint64
+	cacheMisses uint64
+
+	// Lua state pool
+	statePool *sync.Pool
+}
+
+// EngineOption configures the Lua engine
+type EngineOption func(*Engine)
+
+// WithMaxScripts sets the maximum number of cached scripts
+func WithMaxScripts(max int) EngineOption {
+	return func(e *Engine) {
+		e.maxScripts = max
+	}
 }
 
 // NewEngine creates a new Lua execution engine
-func NewEngine(storage storage.Storage) *Engine {
-	return &Engine{
-		storage: storage,
+func NewEngine(storage storage.Storage, opts ...EngineOption) *Engine {
+	e := &Engine{
+		storage:    storage,
+		scripts:    make(map[string]*scriptCacheEntry),
+		lruList:    list.New(),
+		maxScripts: DefaultMaxScripts,
 	}
+
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	// Initialize Lua state pool
+	e.statePool = &sync.Pool{
+		New: func() interface{} {
+			return lua.NewState()
+		},
+	}
+
+	return e
+}
+
+// getLuaState gets a Lua state from the pool
+func (e *Engine) getLuaState() *lua.LState {
+	L := e.statePool.Get().(*lua.LState)
+	// Reset the state
+	L.SetTop(0)
+	return L
+}
+
+// putLuaState returns a Lua state to the pool
+func (e *Engine) putLuaState(L *lua.LState) {
+	// Clear globals to avoid memory leaks
+	L.SetGlobal("KEYS", lua.LNil)
+	L.SetGlobal("ARGV", lua.LNil)
+	L.SetGlobal("redis", lua.LNil)
+	e.statePool.Put(L)
 }
 
 // Eval executes a Lua script with the given keys and arguments
 func (e *Engine) Eval(script string, keys []string, args []string) (interface{}, error) {
-	L := lua.NewState()
-	defer L.Close()
+	L := e.getLuaState()
+	defer e.putLuaState(L)
 
 	// Set up the Redis-compatible environment
 	if err := e.setupRedisAPI(L, keys, args); err != nil {
@@ -43,26 +110,67 @@ func (e *Engine) Eval(script string, keys []string, args []string) (interface{},
 
 // EvalSHA executes a previously loaded script by its SHA1 hash
 func (e *Engine) EvalSHA(sha1 string, keys []string, args []string) (interface{}, error) {
-	script, exists := e.scripts.Load(sha1)
+	e.scriptsMu.RLock()
+	entry, exists := e.scripts[sha1]
+	e.scriptsMu.RUnlock()
+
 	if !exists {
+		e.cacheMisses++
 		return nil, fmt.Errorf("NOSCRIPT No matching script. Please use EVAL")
 	}
 
-	return e.Eval(script.(string), keys, args)
+	e.cacheHits++
+
+	// Move to front of LRU list
+	e.scriptsMu.Lock()
+	e.lruList.MoveToFront(entry.key)
+	e.scriptsMu.Unlock()
+
+	return e.Eval(entry.script, keys, args)
 }
 
 // LoadScript loads a script and returns its SHA1 hash
 func (e *Engine) LoadScript(script string) string {
 	hash := fmt.Sprintf("%x", sha1.Sum([]byte(script)))
-	e.scripts.Store(hash, script)
+
+	e.scriptsMu.Lock()
+	defer e.scriptsMu.Unlock()
+
+	// Check if script already exists
+	if entry, exists := e.scripts[hash]; exists {
+		// Move to front
+		e.lruList.MoveToFront(entry.key)
+		return hash
+	}
+
+	// Add new script
+	entry := &scriptCacheEntry{
+		script: script,
+	}
+	entry.key = e.lruList.PushFront(hash)
+	e.scripts[hash] = entry
+
+	// Evict if cache is full
+	if e.lruList.Len() > e.maxScripts {
+		oldest := e.lruList.Back()
+		if oldest != nil {
+			oldHash := oldest.Value.(string)
+			delete(e.scripts, oldHash)
+			e.lruList.Remove(oldest)
+		}
+	}
+
 	return hash
 }
 
 // ScriptExists checks if scripts with given SHA1 hashes exist
 func (e *Engine) ScriptExists(hashes []string) []bool {
+	e.scriptsMu.RLock()
+	defer e.scriptsMu.RUnlock()
+
 	results := make([]bool, len(hashes))
 	for i, hash := range hashes {
-		_, exists := e.scripts.Load(hash)
+		_, exists := e.scripts[hash]
 		results[i] = exists
 	}
 	return results
@@ -70,10 +178,20 @@ func (e *Engine) ScriptExists(hashes []string) []bool {
 
 // ScriptFlush removes all cached scripts
 func (e *Engine) ScriptFlush() {
-	e.scripts.Range(func(key, value interface{}) bool {
-		e.scripts.Delete(key)
-		return true
-	})
+	e.scriptsMu.Lock()
+	defer e.scriptsMu.Unlock()
+
+	e.scripts = make(map[string]*scriptCacheEntry)
+	e.lruList.Init()
+	e.cacheHits = 0
+	e.cacheMisses = 0
+}
+
+// CacheStats returns cache hit/miss statistics
+func (e *Engine) CacheStats() (hits uint64, misses uint64) {
+	e.scriptsMu.RLock()
+	defer e.scriptsMu.RUnlock()
+	return e.cacheHits, e.cacheMisses
 }
 
 // setupRedisAPI configures the Lua state with Redis-compatible functions

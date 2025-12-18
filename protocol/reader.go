@@ -97,7 +97,7 @@ func (r *Reader) readInteger() (Value, error) {
 		return Value{}, err
 	}
 
-	integer, err := strconv.ParseInt(string(line), 10, 64)
+	integer, err := parseInt64(line)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid integer: %s", line)
 	}
@@ -108,6 +108,49 @@ func (r *Reader) readInteger() (Value, error) {
 	}, nil
 }
 
+// parseInt64 parses an int64 from a byte slice without allocation
+func parseInt64(b []byte) (int64, error) {
+	if len(b) == 0 {
+		return 0, strconv.ErrSyntax
+	}
+
+	var neg bool
+	var i int
+
+	switch b[0] {
+	case '-':
+		neg = true
+		i = 1
+	case '+':
+		i = 1
+	default:
+		i = 0
+	}
+
+	if i >= len(b) {
+		return 0, strconv.ErrSyntax
+	}
+
+	var n int64
+	for ; i < len(b); i++ {
+		if b[i] < '0' || b[i] > '9' {
+			return 0, strconv.ErrSyntax
+		}
+
+		// Check for overflow
+		if n > (1<<63-1)/10 {
+			return 0, strconv.ErrRange
+		}
+
+		n = n*10 + int64(b[i]-'0')
+	}
+
+	if neg {
+		return -n, nil
+	}
+	return n, nil
+}
+
 // readBulkString reads a bulk string value
 func (r *Reader) readBulkString() (Value, error) {
 	line, err := r.readLine()
@@ -115,7 +158,7 @@ func (r *Reader) readBulkString() (Value, error) {
 		return Value{}, err
 	}
 
-	length, err := strconv.ParseInt(string(line), 10, 64)
+	length, err := parseInt64(line)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid bulk string length: %s", line)
 	}
@@ -157,7 +200,7 @@ func (r *Reader) readArray() (Value, error) {
 		return Value{}, err
 	}
 
-	length, err := strconv.ParseInt(string(line), 10, 64)
+	length, err := parseInt64(line)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid array length: %s", line)
 	}
@@ -210,7 +253,7 @@ func (r *Reader) ReadBulkString(fn func(chunk []byte) error) error {
 		return err
 	}
 
-	length, err := strconv.ParseInt(string(line), 10, 64)
+	length, err := parseInt64(line)
 	if err != nil {
 		return fmt.Errorf("invalid bulk string length: %s", line)
 	}
@@ -271,7 +314,7 @@ func (r *Reader) ReadBulkStringForReplication(fn func(chunk []byte) error) error
 		return err
 	}
 
-	length, err := strconv.ParseInt(string(line), 10, 64)
+	length, err := parseInt64(line)
 	if err != nil {
 		return fmt.Errorf("invalid bulk string length: %s", line)
 	}
@@ -335,7 +378,7 @@ func (r *Reader) Skip() error {
 			return err
 		}
 
-		length, err := strconv.ParseInt(string(line), 10, 64)
+		length, err := parseInt64(line)
 		if err != nil {
 			return fmt.Errorf("invalid bulk string length: %s", line)
 		}
@@ -360,7 +403,7 @@ func (r *Reader) Skip() error {
 			return err
 		}
 
-		length, err := strconv.ParseInt(string(line), 10, 64)
+		length, err := parseInt64(line)
 		if err != nil {
 			return fmt.Errorf("invalid array length: %s", line)
 		}

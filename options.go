@@ -36,7 +36,7 @@ type config struct {
 	readOnly       bool
 	commandFilters []string
 	redirectWrites bool // Whether to redirect write commands to master instead of returning READONLY error
-	
+
 	// Storage options
 	shardCount int // Number of shards for storage (0 = use default)
 }
@@ -45,15 +45,15 @@ type config struct {
 func defaultConfig() *config {
 	return &config{
 		masterAddr:        "localhost:6379",
-		replicaAddr:       "",    // No default replica address
+		replicaAddr:       "",      // No default replica address
 		databases:         []int{}, // empty = replicate all databases
-		defaultDatabase:   0,     // Default to database 0
+		defaultDatabase:   0,       // Default to database 0
 		syncTimeout:       30 * time.Second,
 		connectTimeout:    5 * time.Second,
 		readTimeout:       30 * time.Second,
 		writeTimeout:      10 * time.Second,
 		heartbeatInterval: 30 * time.Second, // Send REPLCONF ACK every 30 seconds
-		maxMemory:         0,                 // unlimited
+		maxMemory:         0,                // unlimited
 		readOnly:          true,
 		redirectWrites:    false, // Default: return READONLY error for writes
 		shardCount:        0,     // 0 = use storage default (64)
@@ -422,8 +422,6 @@ func WithReadOnly(readOnly bool) Option {
 	}
 }
 
-
-
 // WithCommandFilters sets which commands to replicate
 // Empty slice means replicate all commands
 //
@@ -472,9 +470,9 @@ func WithReplicaAuth(password string) Option {
 
 // WithWriteRedirection enables redirection of write commands to the master
 // instead of returning READONLY errors (default: false)
-// 
+//
 // When enabled, write commands like SET, DEL, etc. will be forwarded to the master
-// and the response will be returned to the client. When disabled (default), 
+// and the response will be returned to the client. When disabled (default),
 // write commands return "READONLY You can't write against a read only replica"
 //
 // Example:

@@ -697,15 +697,15 @@ func TestHeartbeatConnectionStability(t *testing.T) {
 		select {
 		case <-ticker.C:
 			connectionChecks++
-			
+
 			// Check connection status
 			status := replica.SyncStatus()
-			
+
 			if status.Connected {
 				connectedChecks++
-				t.Logf("✅ Check %d: Connected, offset: %d, commands: %d", 
+				t.Logf("✅ Check %d: Connected, offset: %d, commands: %d",
 					connectionChecks, status.ReplicationOffset, status.CommandsProcessed)
-				
+
 				// Verify offset is not going backwards (should only increase or stay same)
 				if lastOffset >= 0 && status.ReplicationOffset < lastOffset {
 					t.Errorf("❌ Replication offset went backwards: %d -> %d", lastOffset, status.ReplicationOffset)
@@ -718,18 +718,18 @@ func TestHeartbeatConnectionStability(t *testing.T) {
 			// Set a test key to verify replication is still working
 			testKey := fmt.Sprintf("heartbeat:check:%d", connectionChecks)
 			testValue := fmt.Sprintf("value_%d_%d", connectionChecks, time.Now().Unix())
-			
+
 			if err := setRedisKeyWithAuth(redisAddr, redisPassword, testKey, testValue); err != nil {
 				t.Errorf("Failed to set heartbeat check key %s: %v", testKey, err)
 			} else {
 				// Give a moment for replication
 				time.Sleep(500 * time.Millisecond)
-				
+
 				// Verify the key was replicated
 				if replicatedValue, exists := replica.Storage().Get(testKey); !exists {
 					t.Errorf("❌ Heartbeat check key %s not replicated", testKey)
 				} else if string(replicatedValue) != testValue {
-					t.Errorf("❌ Heartbeat check key %s value mismatch: expected %s, got %s", 
+					t.Errorf("❌ Heartbeat check key %s value mismatch: expected %s, got %s",
 						testKey, testValue, string(replicatedValue))
 				}
 			}
@@ -849,7 +849,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 
 	// Run continuous changes for 2 minutes
 	testDuration := 2 * time.Minute
-	
+
 	// Tracking variables
 	totalOperations := 0
 	setOperations := 0
@@ -864,7 +864,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 	// Goroutine for continuous changes
 	go func() {
 		defer close(changesComplete)
-		
+
 		operationCounter := 0
 		for {
 			select {
@@ -873,7 +873,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 				return
 			default:
 				operationCounter++
-				
+
 				// Vary the types of operations
 				switch operationCounter % 4 {
 				case 0: // SET operation
@@ -885,7 +885,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 					} else {
 						setOperations++
 					}
-					
+
 				case 1: // UPDATE operation (overwrite existing key)
 					if setOperations > 0 {
 						key := fmt.Sprintf("active:set:%d", (operationCounter/4)*4) // Reference previous SET
@@ -897,7 +897,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 							updateOperations++
 						}
 					}
-					
+
 				case 2: // SET with different pattern
 					key := fmt.Sprintf("active:data:%d", operationCounter)
 					// Vary data sizes more conservatively
@@ -909,7 +909,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 					} else {
 						setOperations++
 					}
-					
+
 				case 3: // DELETE operation (delete some older keys)
 					if operationCounter > 20 { // Only start deleting after we have some keys
 						// Delete both types of keys that were created
@@ -932,9 +932,9 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 						}
 					}
 				}
-				
+
 				totalOperations++
-				
+
 				// Brief pause between operations to avoid overwhelming Redis
 				time.Sleep(50 * time.Millisecond)
 			}
@@ -944,14 +944,14 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 	// Goroutine to monitor replication status
 	statusTicker := time.NewTicker(10 * time.Second)
 	defer statusTicker.Stop()
-	
+
 	statusChecks := 0
 	connectedStatusChecks := 0
-	
+
 	statusMonitorDone := make(chan struct{})
 	go func() {
 		defer close(statusMonitorDone)
-		
+
 		for {
 			select {
 			case <-stopChanges:
@@ -959,10 +959,10 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 			case <-statusTicker.C:
 				statusChecks++
 				status := replica.SyncStatus()
-				
+
 				if status.Connected {
 					connectedStatusChecks++
-					t.Logf("📈 Status check %d: Connected, offset: %d, commands: %d", 
+					t.Logf("📈 Status check %d: Connected, offset: %d, commands: %d",
 						statusChecks, status.ReplicationOffset, status.CommandsProcessed)
 				} else {
 					t.Errorf("❌ Status check %d: Disconnected during active changes!", statusChecks)
@@ -973,10 +973,10 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 
 	// Wait for test duration
 	time.Sleep(testDuration)
-	
+
 	// Stop changes
 	close(stopChanges)
-	
+
 	// Wait for goroutines to complete
 	<-changesComplete
 	<-statusMonitorDone
@@ -996,7 +996,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 	// Verify replication results
 	storage := replica.Storage()
 	replicatedKeys := storage.Keys("*")
-	
+
 	t.Logf("🔍 Verifying replication results:")
 	t.Logf("   Keys in replica: %d", len(replicatedKeys))
 
@@ -1011,14 +1011,14 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 	// Verify some replication occurred
 	finalStatus := replica.SyncStatus()
 	if finalStatus.CommandsProcessed < int64(totalOperations/2) {
-		t.Errorf("❌ Too few commands replicated: %d processed vs %d sent (expected at least 50%%)", 
+		t.Errorf("❌ Too few commands replicated: %d processed vs %d sent (expected at least 50%%)",
 			finalStatus.CommandsProcessed, totalOperations)
 	}
 
 	// Sample verification: check that some specific keys exist and have correct values
 	sampleVerificationErrors := 0
 	samplesToCheck := 10
-	
+
 	for i := 0; i < samplesToCheck && i*4 < totalOperations; i++ {
 		key := fmt.Sprintf("active:set:%d", i*4)
 		if value, exists := storage.Get(key); exists {
@@ -1041,7 +1041,7 @@ func TestReplicationDuringActiveChanges(t *testing.T) {
 	}
 
 	t.Logf("✅ Replication during active changes test completed successfully")
-	t.Logf("   Final status: %d commands processed, %d keys in replica", 
+	t.Logf("   Final status: %d commands processed, %d keys in replica",
 		finalStatus.CommandsProcessed, len(replicatedKeys))
 }
 
@@ -1387,7 +1387,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 	// Start replica with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := replica.Start(ctx); err != nil {
 		b.Fatalf("Failed to start replica: %v", err)
 	}
@@ -1395,7 +1395,7 @@ func BenchmarkReplicationThroughput(b *testing.B) {
 	// Wait for initial sync with timeout
 	syncCtx, syncCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer syncCancel()
-	
+
 	if err := replica.WaitForSync(syncCtx); err != nil {
 		b.Fatalf("Failed to sync: %v", err)
 	}
@@ -1492,7 +1492,7 @@ func BenchmarkReplicationLatency(b *testing.B) {
 	// Start replica with proper context deadline
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	
+
 	if err := replica.Start(ctx); err != nil {
 		b.Fatalf("Failed to start replica: %v", err)
 	}
@@ -1500,7 +1500,7 @@ func BenchmarkReplicationLatency(b *testing.B) {
 	// Wait for initial sync with better error handling
 	syncCtx, syncCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer syncCancel()
-	
+
 	if err := replica.WaitForSync(syncCtx); err != nil {
 		// Improved error handling for "replication stopped unexpectedly"
 		if strings.Contains(err.Error(), "replication stopped unexpectedly") {
@@ -1584,9 +1584,9 @@ func BenchmarkReplicationStartup(b *testing.B) {
 
 		// Measure startup time with proper context deadline
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		
+
 		start := time.Now()
-		
+
 		if err := replica.Start(ctx); err != nil {
 			cancel()
 			_ = replica.Close() // Ignore error as we're already failing
@@ -1595,12 +1595,12 @@ func BenchmarkReplicationStartup(b *testing.B) {
 
 		// Wait for streaming to begin (initial sync)
 		syncCtx, syncCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		
+
 		if err := replica.WaitForSync(syncCtx); err != nil {
 			syncCancel()
 			cancel()
 			_ = replica.Close() // Ignore error as we're already failing
-			
+
 			// Handle "replication stopped unexpectedly" more gracefully
 			if strings.Contains(err.Error(), "replication stopped unexpectedly") {
 				failedIterations++
@@ -1617,13 +1617,13 @@ func BenchmarkReplicationStartup(b *testing.B) {
 
 		syncCancel()
 		cancel()
-		
+
 		// Clean shutdown
 		if closeErr := replica.Close(); closeErr != nil {
 			b.Logf("Warning: Error during replica cleanup: %v", closeErr)
 		}
 	}
-	
+
 	// Report summary at the end
 	if failedIterations > 0 {
 		b.Logf("Benchmark completed: %d successful, %d failed iterations", successfulIterations, failedIterations)

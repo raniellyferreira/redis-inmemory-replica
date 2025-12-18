@@ -23,7 +23,7 @@ func TestHeartbeatConfiguration(t *testing.T) {
 		},
 		{
 			name:     "disabled heartbeat",
-			interval: -1, // disabled
+			interval: -1,    // disabled
 			wantErr:  false, // allowed
 		},
 		{
@@ -38,7 +38,7 @@ func TestHeartbeatConfiguration(t *testing.T) {
 			opts := []Option{
 				WithMaster("localhost:6379"),
 			}
-			
+
 			if tt.interval != 0 {
 				opts = append(opts, WithHeartbeatInterval(tt.interval))
 			}

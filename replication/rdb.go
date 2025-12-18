@@ -76,6 +76,15 @@ type RDBHandler interface {
 	OnEnd() error
 }
 
+// RDBResizeHandler is an optional interface for handlers that support pre-sizing
+type RDBResizeHandler interface {
+	RDBHandler
+
+	// OnResizeDB is called when the RDB file provides size hints
+	// dbSize is the expected number of keys, expiresSize is the expected number of keys with expiry
+	OnResizeDB(dbSize, expiresSize uint64) error
+}
+
 // RDBParser parses RDB files in streaming mode
 type RDBParser struct {
 	reader   io.Reader
@@ -190,14 +199,23 @@ func (p *RDBParser) Parse() error {
 			expiry = &t
 
 		case RDBOpcodeResizeDB:
-			// Database resize hint - skip for now
-			if _, err := p.readLength(); err != nil {
+			// Database resize hint - provides expected sizes for pre-allocation
+			dbSize, err := p.readLength()
+			if err != nil {
 				if !p.canSkipError() {
 					return err
 				}
 			}
-			if _, err := p.readLength(); err != nil {
+			expiresSize, err := p.readLength()
+			if err != nil {
 				if !p.canSkipError() {
+					return err
+				}
+			}
+
+			// If handler supports pre-sizing, notify it
+			if resizeHandler, ok := p.handler.(RDBResizeHandler); ok {
+				if err := resizeHandler.OnResizeDB(dbSize, expiresSize); err != nil {
 					return err
 				}
 			}

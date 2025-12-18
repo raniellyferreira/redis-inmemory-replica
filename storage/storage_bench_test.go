@@ -16,7 +16,7 @@ func BenchmarkStorageGet(b *testing.B) {
 		{
 			name: "Hit_Small",
 			setup: func(s *MemoryStorage) {
-				s.Set("key", []byte("small"), nil)
+				_ = s.Set("key", []byte("small"), nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -24,7 +24,7 @@ func BenchmarkStorageGet(b *testing.B) {
 			name: "Hit_Medium",
 			setup: func(s *MemoryStorage) {
 				data := make([]byte, 1024) // 1KB
-				s.Set("key", data, nil)
+				_ = s.Set("key", data, nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -32,7 +32,7 @@ func BenchmarkStorageGet(b *testing.B) {
 			name: "Hit_Large",
 			setup: func(s *MemoryStorage) {
 				data := make([]byte, 1024*1024) // 1MB
-				s.Set("key", data, nil)
+				_ = s.Set("key", data, nil)
 			},
 			hitRatio: 1.0,
 		},
@@ -44,8 +44,8 @@ func BenchmarkStorageGet(b *testing.B) {
 		{
 			name: "Mixed_50pct",
 			setup: func(s *MemoryStorage) {
-				s.Set("key1", []byte("value1"), nil)
-				s.Set("key2", []byte("value2"), nil)
+				_ = s.Set("key1", []byte("value1"), nil)
+				_ = s.Set("key2", []byte("value2"), nil)
 			},
 			hitRatio: 0.5,
 		},
@@ -60,11 +60,12 @@ func BenchmarkStorageGet(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				if sc.hitRatio == 1.0 {
+				switch sc.hitRatio {
+				case 1.0:
 					s.Get("key")
-				} else if sc.hitRatio == 0.0 {
+				case 0.0:
 					s.Get("nonexistent")
-				} else {
+				default:
 					// Mixed scenario
 					if i%2 == 0 {
 						s.Get("key1")
@@ -100,7 +101,7 @@ func BenchmarkStorageSet(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%1000) // Cycle through 1000 keys
-				s.Set(key, data, nil)
+				_ = s.Set(key, data, nil)
 			}
 		})
 	}
@@ -130,7 +131,7 @@ func BenchmarkStorageSetWithTTL(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%1000)
 				expiry := time.Now().Add(sc.ttl)
-				s.Set(key, data, &expiry)
+				_ = s.Set(key, data, &expiry)
 			}
 		})
 	}
@@ -142,7 +143,7 @@ func BenchmarkStorageDelete(b *testing.B) {
 		s := NewMemory()
 		// Pre-populate
 		for i := 0; i < 10000; i++ {
-			s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+			_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 		}
 
 		b.ResetTimer()
@@ -153,7 +154,7 @@ func BenchmarkStorageDelete(b *testing.B) {
 			s.Del(key)
 			// Re-add for next iteration
 			if i%100 == 0 {
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			}
 		}
 	})
@@ -179,7 +180,7 @@ func BenchmarkStorageKeys(b *testing.B) {
 			s := NewMemory()
 			// Pre-populate
 			for i := 0; i < size; i++ {
-				s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+				_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 			}
 
 			b.ResetTimer()
@@ -216,11 +217,11 @@ func BenchmarkStorageExpirationCheck(b *testing.B) {
 				if i < expiredCount {
 					// Already expired
 					expiry := time.Now().Add(-time.Second)
-					s.Set(key, []byte("value"), &expiry)
+					_ = s.Set(key, []byte("value"), &expiry)
 				} else {
 					// Not expired
 					expiry := time.Now().Add(time.Hour)
-					s.Set(key, []byte("value"), &expiry)
+					_ = s.Set(key, []byte("value"), &expiry)
 				}
 			}
 
@@ -240,7 +241,7 @@ func BenchmarkStorageConcurrentReads(b *testing.B) {
 	s := NewMemory()
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
-		s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+		_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 	}
 
 	b.ResetTimer()
@@ -267,7 +268,7 @@ func BenchmarkStorageConcurrentWrites(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := fmt.Sprintf("key_%d", i%1000)
-			s.Set(key, []byte("value"), nil)
+			_ = s.Set(key, []byte("value"), nil)
 			i++
 		}
 	})
@@ -278,7 +279,7 @@ func BenchmarkStorageConcurrentMixed(b *testing.B) {
 	s := NewMemory()
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
-		s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
+		_ = s.Set(fmt.Sprintf("key_%d", i), []byte("value"), nil)
 	}
 
 	b.ResetTimer()
@@ -290,7 +291,7 @@ func BenchmarkStorageConcurrentMixed(b *testing.B) {
 			key := fmt.Sprintf("key_%d", i%1000)
 			if i%3 == 0 {
 				// 33% writes
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			} else {
 				// 67% reads
 				s.Get(key)
@@ -313,7 +314,7 @@ func BenchmarkStorageSharding(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key_%d", i%10000)
-				s.Set(key, []byte("value"), nil)
+				_ = s.Set(key, []byte("value"), nil)
 			}
 		})
 	}

@@ -136,7 +136,7 @@ func TestSecurityTimeout(t *testing.T) {
 				if !strings.Contains(errStr, "timeout") && !strings.Contains(errStr, "dial") && !strings.Contains(errStr, "deadline") {
 					t.Errorf("Expected timeout/dial/deadline error, got: %v", err)
 				}
-				
+
 				// For very short timeouts, should fail faster than context timeout
 				if tt.name == "very_short_timeouts" && elapsed > 1500*time.Millisecond {
 					t.Logf("Connection took %v, which is acceptable for short timeouts", elapsed)
