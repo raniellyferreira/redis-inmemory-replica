@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/raniellyferreira/redis-inmemory-replica/storage"
 	lua "github.com/yuin/gopher-lua"
@@ -115,11 +116,11 @@ func (e *Engine) EvalSHA(sha1 string, keys []string, args []string) (interface{}
 	e.scriptsMu.RUnlock()
 
 	if !exists {
-		e.cacheMisses++
+		atomic.AddUint64(&e.cacheMisses, 1)
 		return nil, fmt.Errorf("NOSCRIPT No matching script. Please use EVAL")
 	}
 
-	e.cacheHits++
+	atomic.AddUint64(&e.cacheHits, 1)
 
 	// Move to front of LRU list
 	e.scriptsMu.Lock()
@@ -183,15 +184,13 @@ func (e *Engine) ScriptFlush() {
 
 	e.scripts = make(map[string]*scriptCacheEntry)
 	e.lruList.Init()
-	e.cacheHits = 0
-	e.cacheMisses = 0
+	atomic.StoreUint64(&e.cacheHits, 0)
+	atomic.StoreUint64(&e.cacheMisses, 0)
 }
 
 // CacheStats returns cache hit/miss statistics
 func (e *Engine) CacheStats() (hits uint64, misses uint64) {
-	e.scriptsMu.RLock()
-	defer e.scriptsMu.RUnlock()
-	return e.cacheHits, e.cacheMisses
+	return atomic.LoadUint64(&e.cacheHits), atomic.LoadUint64(&e.cacheMisses)
 }
 
 // setupRedisAPI configures the Lua state with Redis-compatible functions
