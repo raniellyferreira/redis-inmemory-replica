@@ -5,7 +5,7 @@ This document captures baseline performance metrics before optimization work beg
 **Environment:**
 - OS: Linux (amd64)
 - CPU: AMD EPYC 7763 64-Core Processor
-- Go Version: 1.25.2
+- Go Version: 1.25.5
 - Date: 2025-10-11
 
 ## Storage Operations
@@ -303,7 +303,7 @@ Based on these baselines, here are the priority optimization targets:
 
 ## Notes
 
-- All metrics collected with Go 1.25.2 on AMD EPYC 7763
+- All metrics collected with Go 1.25.5 on AMD EPYC 7763
 - Benchmarks run with `-benchmem` for allocation tracking
 - Multiple runs averaged for consistency
 - These baselines will be used for benchstat comparisons
