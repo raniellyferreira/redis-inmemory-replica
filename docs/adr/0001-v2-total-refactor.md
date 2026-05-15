@@ -68,18 +68,27 @@ The Redis source confirms the wire-level requirements:
 - **Functional correctness** is the dominant concern: a "Redis replica" that
   silently drops every non-string mutation is, in the strict sense, not a
   replica.
-- The library positions itself for Redis 6.0+ in 2026; legacy ziplist/zipmap
-  support adds parser code that no current master will emit.
+- **First-class performance.** The library positions itself as a
+  *high-performance* in-memory replica (≥ 100 k ops/sec target stated in
+  `README.md`). The refactor **must not** trade clarity for regressions on
+  the hot paths: RESP parse/write, sharded storage `Get/Set/Del`, RDB
+  ingest throughput, and the live command applier loop. Performance is
+  governed by D-10 (budgets, methodology, per-phase gates) and is *not*
+  deferred to a parallel "performance roadmap".
+- The library targets Redis 6.0+ in 2026; legacy ziplist/zipmap support
+  adds parser code that no current master will emit.
 - Maintenance velocity is impaired by file size (I-1, I-7) and dead surface
   (I-5, I-6).
-- The performance roadmap (`ROADMAP.md`) is largely orthogonal — most of its
-  targets (allocations, RESP fast paths, shard hashing) survive this refactor.
+- The performance roadmap (`ROADMAP.md`) **complements** this ADR — its
+  micro-optimisation targets (RESP fast paths, shard hashing, RDB batching,
+  Lua cache eviction) feed into the budgets defined in D-10 and are not
+  superseded by the refactor.
 
 ---
 
 ## 2. Decisions
 
-The refactor is structured as **nine numbered decisions**. Each is independent
+The refactor is structured as **ten numbered decisions**. Each is independent
 in principle but they are scheduled as five sequential phases (see §4).
 
 ### D-1 — Single repository layout, `internal/` for protocol, replication and composition root
@@ -148,6 +157,26 @@ must migrate. A `MIGRATING.md` will document the mapping.
 single change with the largest functional impact and there is no incremental
 path that preserves the byte-slice signature.
 
+**Performance non-negotiables for this redesign** (governed by D-10):
+
+- **String fast path is allocation-free on hit.** `StringGet(key) ([]byte, bool)`
+  must return the underlying shard's `[]byte` slice directly (no copy, no
+  interface boxing) — same as today's `Get`. The `Value` carrying it is a
+  small struct on the stack, never returned to the caller.
+- **Hot reads never traverse a pointer chain.** `Value` is a struct, not an
+  interface; the `Kind` discriminator dispatches inline. Complex-type
+  payloads (`*list`, `*hash`, …) are only dereferenced on type-specific
+  methods, never on `Get / Exists / TTL / Type`.
+- **`Value` size budget: ≤ 32 bytes** on amd64. Discriminator + expiry
+  pointer + one payload pointer fit; the legacy `String []byte` field
+  (header is 24 B) becomes the only "fat" arm and lives in a union slot
+  shared with the typed-payload pointer (tagged-union layout).
+- **No new allocations in the live command loop.** Applier dispatch uses
+  function-typed `Applier` (D-5), already non-allocating. RESP arg parsing
+  reuses a pooled `[][]byte` (sized by command).
+- Benchmark gates are defined in D-10 §10.4; P3 will not merge if any of
+  them regress.
+
 **Alternatives considered.**
 
 - *Encode complex types as opaque blobs.* Rejected: clients would need to
@@ -157,6 +186,10 @@ path that preserves the byte-slice signature.
   a major bump.
 - *Wait for a "v2 storage" plug-in interface.* Rejected: the RDB handler and
   command-stream executor (D-4, D-5) need this *now*.
+- ***`interface { Kind() Kind }` instead of a tagged struct.*** Rejected
+  explicitly on performance grounds: every storage hit would allocate an
+  interface box and pay an indirect call. Modern-go-development §9 calls
+  this out as a hot-path anti-pattern.
 
 ### D-3 — True streaming RDB ingest
 
@@ -349,6 +382,164 @@ considered.
   modernizers are exactly the kind of small mechanical cleanup that is
   cheap to do at the start of a refactor and expensive to retrofit later.
 
+### D-10 — Performance as a first-class concern: budgets, methodology, gates
+
+**Decision.** Performance is not a secondary goal of the refactor; it is a
+**ship gate**. Every phase has explicit budgets, every hot-path PR carries
+a benchstat diff in its description, and any regression > the per-budget
+threshold blocks merge unless explicitly waived by the maintainer with
+written justification in the PR.
+
+#### 10.1 Hot paths (must never regress)
+
+| Hot path | Definition | Budget (vs. P0 baseline) |
+|----------|------------|--------------------------|
+| **String `Get` hit** | shard lookup + return existing `[]byte` slice | **0 alloc/op**, ns/op ≤ baseline |
+| **String `Set` (no expiry)** | shard write of a new `[]byte` | **≤ 1 alloc/op** (the value copy itself), ns/op ≤ baseline |
+| **String `Del` hit** | shard delete | **0 alloc/op**, ns/op ≤ baseline |
+| **RESP parse common command** (`GET k`, `SET k v`, `PING`) | byte-slice scan + arg array build | **≤ 2 allocs/op** (the arg slice + one bulk-string copy), ns/op ≤ baseline |
+| **RESP write reply** (simple string, integer, bulk string ≤ 256 B) | direct write to `bufio.Writer` | **0 alloc/op**, ns/op ≤ baseline |
+| **Live applier dispatch** | registry lookup + applier invocation | **0 alloc/op** on the dispatch itself; applier-internal allocs are command-specific budgets |
+| **RDB string-type ingest** | decode + storage write per key | **≤ 1 alloc/op** (the storage copy), measured per-key throughput ≥ baseline |
+| **Shard selection** | xxhash mod shard count | **0 alloc/op**, ≤ baseline ns/op |
+
+Baseline is captured in **P0** (`docs/baselines/v2-pre-baseline.txt`).
+Comparison is run via `benchstat baseline.txt new.txt`. A "regression" is
+a confidence-interval-not-crossed worsening on the *p-value*-adjusted
+benchstat output, **not** a single noisy run.
+
+#### 10.2 Warm paths (≤ 5 % regression tolerated)
+
+These paths run on every replication command but are not as latency-
+sensitive as the hot paths:
+
+- RDB ingest of complex types (List/Set/Hash/ZSet) — measured as keys/sec.
+- Pattern-match `KEYS *` / `SCAN` cursors.
+- `INFO` section generation.
+- Lua `EVAL` of cached script (`EVALSHA`).
+- TLS handshake (replication and server).
+
+#### 10.3 Cold paths (no regression budget)
+
+Connection setup, full-resync handshake, graceful shutdown, error paths.
+These run rarely and may grow in cost if it pays for clarity elsewhere.
+
+#### 10.4 Methodology
+
+1. **Baseline first.** P0 captures `-bench=. -benchmem -count=10` across
+   all packages with benchmarks. Output goes to
+   `docs/baselines/v2-pre-baseline.txt` and is the only reference point
+   for the rest of the refactor.
+2. **Benchstat in every perf-sensitive PR.** Any PR that touches
+   `storage/`, `internal/resp/`, `internal/rdb/`, `internal/cmdapply/`,
+   or `internal/replproto/stream.go` **must** paste a benchstat diff in
+   the PR description. CI lint enforces this via a check that fails when
+   one of these paths changes and the PR body has no
+   `<!-- benchstat -->` block.
+3. **Escape analysis is non-negotiable on hot paths.** `go build -gcflags=all=-m=2`
+   is run on `internal/resp` and `storage/memory.go`; new "escapes to heap"
+   lines in `Get` / `Set` / `parseCommand` paths block merge. A test target
+   `make escape-analysis` produces the diff.
+4. **pprof in CI nightly.** A `bench-pprof` job (added in P0) runs the
+   benchmark suite with `-cpuprofile` and `-memprofile`, uploads the
+   profiles as artifacts. The PR template asks "did you inspect the
+   profile?" for perf PRs.
+5. **`-race` always on in CI.** Already true; reaffirmed because the
+   sharded-storage and goroutine refactors increase the surface where
+   races could appear.
+6. **`testing.B.Loop`** (Go 1.24+) is the canonical benchmark loop —
+   already in D-9; restated here because consistent loop semantics is a
+   precondition for benchstat comparability.
+
+#### 10.5 Specific design rules carried through every phase
+
+These are decisions that bind subsequent phases without being re-negotiated:
+
+- **No interface boxing on hot paths.** `Storage` is an interface only at
+  the public boundary; `internal/cmdapply` calls into `*MemoryStorage`
+  concretely. `Value` is a struct, not an interface.
+- **`sync.Pool` for bounded-size, temporary objects only.** Examples:
+  RESP arg slices (sized by command type), RDB read buffers (8 KiB), the
+  per-connection response builder in the embedded server. Pools are
+  **never** used as caches; pool items are reset on `Get` and must not
+  retain state across uses (modern-go-development §9 "Pooling caveats").
+- **No `bytes.Buffer` or `strings.Builder` in the hot replication loop.**
+  Direct `bufio.Reader` / `bufio.Writer` operations on the wire.
+- **Pre-size slices and maps whenever the size is statically known.**
+  Applier signatures pass argument counts so appliers can size internal
+  state up-front.
+- **No reflection on hot paths.** Period.
+- **`unsafe.String` is permitted in two places only,** both isolated
+  behind a single helper in `internal/resp`: (a) interning a `[]byte`
+  that the parser owns into a `string` key for `map[string]Applier`
+  lookup, (b) returning a `string` view of a bulk-string payload that
+  the caller promises not to mutate. Every other use is rejected in
+  review.
+- **Struct field ordering** for `Value`, `shard`, and the per-connection
+  state in `server/` is locked by a `go vet` `-fieldalignment` check in
+  CI.
+- **Atomic, not mutex, for read-mostly counters.** Replication offset,
+  command counters, sync-completed flag use `sync/atomic`. Shard locks
+  remain mutex-based because writes are equally frequent.
+- **No `time.After` in loops.** All long-running goroutines reuse a
+  single `time.Timer` and `Reset`.
+- **Lua script cache** gains an explicit bound (`WithLuaScriptCacheSize`,
+  default 128) with LRU eviction. Unbounded cache today is a latent
+  memory leak; modern-go-development §9.5 calls this out.
+
+#### 10.6 Per-phase gates
+
+Each phase's exit criteria already required "benchmarks comparable; no
+regression > 5 %". D-10 sharpens this:
+
+- **P0** captures the baseline; no gate (there is nothing to compare to).
+- **P1** must show **0 % regression** on hot paths (it is a pure move /
+  delete). Any regression here is a bug.
+- **P2** must show **memory-peak reduction ≥ 40 %** on the 50 MB RDB
+  ingest test, and **≤ 0 % regression** on RDB throughput
+  (keys-per-second). It's a streaming change; throughput must hold.
+- **P3** is the hardest gate: typed `Value` must not regress hot-path
+  alloc counts (see D-2 non-negotiables and 10.1 table). String `Get/Set`
+  may be re-run against a synthetic 1 M-key workload with `pprof
+  --diff_base` to prove no new allocations enter the path. Permitted
+  tolerance: ns/op may rise up to **3 %** on string ops because of the
+  added `Kind` switch, *only* if `alloc/op` is unchanged. Complex-type
+  paths set their own baselines in this phase (no prior comparator).
+- **P4** is additive; new code paths have their own budgets (e.g., HFE
+  hash decode ≤ 1.5× plain hash decode per element). Existing paths must
+  not regress.
+- **P5** changes the server transport. Gate: a `go-redis/v9` round-trip
+  benchmark (`GET k` with 64 concurrent clients) must show **≤ 5 %
+  regression** on latency p50 and **≤ 10 %** on p99 vs the P4 baseline.
+  The redcon-vs-native decision is also measured: whichever is faster on
+  this benchmark wins the tie-breaker if functional parity is achieved.
+
+#### 10.7 What is *not* in scope
+
+- **SIMD / `simd/archsimd`** (Go 1.26 experimental) — too new, not stable.
+- **`unsafe.Pointer` cleverness beyond the two `unsafe.String` cases above.**
+- **PGO (Profile-Guided Optimisation).** Worth doing post-v2.0 once the
+  hot paths are stable; tracked as a follow-up in `ROADMAP.md`, not
+  blocking the refactor.
+- **Custom allocator / arena** for the storage shards. Premature; revisit
+  if Go 1.27+ ships an arena API.
+
+**Why.** Without explicit budgets and gates, performance becomes whatever
+the last PR happened to produce. The library has a published "≥ 100 k
+ops/sec" claim and a measured baseline in `ROADMAP.md`; the refactor
+either preserves and improves that, or it changes the value proposition
+of the library. The non-negotiable framing here makes the trade-offs
+visible at PR review instead of post-merge.
+
+**Alternatives considered.**
+
+- *Treat performance as a follow-up roadmap.* Rejected: the typed-`Value`
+  change in P3 is exactly the moment when a regression could land and be
+  hard to undo. Gating it now is cheaper than removing it later.
+- *Looser tolerances (10–15 % on hot paths).* Rejected: hot-path
+  regressions compound. A 10 % regression on `Get` is a 10 % regression
+  on every read in production.
+
 ---
 
 ## 3. Out of scope
@@ -387,38 +578,81 @@ earlier phases' API changes.
 
 - All tests green: `go test ./...` (including `-race`).
 - Lint clean: `golangci-lint run` (project config).
-- `go vet ./...` clean.
-- Benchmarks comparable: `benchstat` shows no regression > 5 % on baseline
-  benchmarks captured in P0; regressions must be justified or fixed.
+- `go vet ./...` clean (including `-fieldalignment`).
+- **Hot-path budgets met** per D-10 §10.1 — `benchstat` diff against the
+  P0 baseline shows **0 % regression on hot paths** and ≤ 5 % on warm
+  paths. Cold paths have no budget.
+- **Escape-analysis diff inspected** for any change touching `storage/`,
+  `internal/resp/`, `internal/rdb/`, `internal/cmdapply/`, or
+  `internal/replproto/stream.go` — no new heap escapes on hot-path
+  functions.
+- **`govulncheck ./...`** clean.
+- PR description carries a `<!-- benchstat -->` block whenever a
+  perf-sensitive path changed (enforced by a CI check added in P0).
 - `CHANGELOG.md` entry added under `## [Unreleased]`.
 - ADR updated with any decision changes during the phase.
 
-### 4.2 Phase P0 — Pre-flight
+### 4.2 Phase P0 — Pre-flight (toolchain + performance baseline)
 
 **Goal.** Establish the toolchain baseline so all later phases can rely on
-Go 1.26 features without per-PR debate.
+Go 1.26 features without per-PR debate, **and** lock in the performance
+baseline that gates every subsequent phase (D-10).
 
 **Tasks.**
 
 1. Bump `go.mod` to `go 1.26` and `toolchain go1.26.3`.
-2. `gofmt -s -w .` and `go fix ./...` across the repo.
-3. Capture baseline benchmarks: `go test -run=^$ -bench=. -benchmem -count=10 ./... | tee docs/baselines/v2-pre-baseline.txt`.
-4. Verify CI matrix runs on Go 1.26.
-5. Update `README.md` Go version badge.
+2. `gofmt -s -w .` and `go fix ./...` across the repo (separate commit
+   from the bump for review hygiene).
+3. **Capture the full performance baseline.** A `make baseline` target:
+   - `go test -run=^$ -bench=. -benchmem -count=10 -timeout=30m ./... | tee docs/baselines/v2-pre-baseline.txt`.
+   - `go test -run=^$ -bench=. -count=10 -cpuprofile=docs/baselines/v2-pre-cpu.prof -memprofile=docs/baselines/v2-pre-mem.prof ./storage ./protocol ./replication`.
+   - `go build -gcflags=all=-m=2 ./storage ./protocol ./replication 2> docs/baselines/v2-pre-escape.txt`.
+   - All four artefacts committed under `docs/baselines/`.
+4. **Add a CI `bench-regression` job** that runs after the lint/test
+   matrix on perf-sensitive PRs. It runs the bench suite under
+   `-count=6`, computes `benchstat` against the committed baseline, and
+   fails if any hot-path budget from D-10 §10.1 is breached. Workflow
+   file: `.github/workflows/bench-regression.yml`.
+5. **Add a CI `benchstat-required` lint** that fails when a PR touches
+   `storage/**`, `protocol/**`, `replication/**` (and later
+   `internal/{resp,rdb,replproto,cmdapply}/**`) without a
+   `<!-- benchstat -->` block in its body. Implemented as a tiny
+   `actions/github-script` step in the test workflow.
+6. **Add `make escape-analysis`** target: `go build -gcflags=all=-m=2`
+   on the hot packages, diff against the committed
+   `docs/baselines/v2-pre-escape.txt`, fail on any new "escapes to heap"
+   line inside a function listed in D-10 §10.1.
+7. **Add `go vet -fieldalignment`** to the lint workflow (already in
+   golangci-lint v2.x as `fieldalignment`); fix any preexisting
+   findings as part of P0 so later phases start clean.
+8. Verify CI matrix runs on Go 1.26 across all existing jobs.
+9. Update `README.md` Go version badge and add a short "Performance
+   guarantees" section pointing at D-10.
 
-**Tests added/changed.** None functional. Add a CI job that fails if
-`go.mod` regresses below `go 1.26`.
+**Tests added/changed.** None functional. Adds the CI gates above and a
+guard test `TestGoModVersion` that fails if `go.mod` regresses below
+`go 1.26`.
 
 **Acceptance.**
 
 - CI green on Go 1.26 across all existing jobs.
-- `docs/baselines/v2-pre-baseline.txt` committed.
-- ADR `[Speculation]` markers near "<5 % regression" in §6.2 can now be
-  measured against this baseline.
+- `docs/baselines/v2-pre-baseline.txt`, `v2-pre-cpu.prof`,
+  `v2-pre-mem.prof`, `v2-pre-escape.txt` committed.
+- `bench-regression` workflow runs on a no-op PR and passes (sanity).
+- `benchstat-required` lint blocks a synthetic PR that edits
+  `storage/memory.go` without a benchstat block (sanity).
+- `make escape-analysis` produces zero diff on a clean tree.
 
-**Risks.** Low. If `go fix` produces a noisy diff, it is split into a
-separate commit so reviewers can diff toolchain changes from semantic
-changes.
+**Risks.**
+
+- *Noisy `go fix` diff.* Mitigation: separate commit so reviewers can
+  diff toolchain changes from semantic ones.
+- *Benchmark noise on CI runners.* Mitigation: `-count=6` minimum,
+  benchstat's p-value adjustment, and a "retry once" policy on
+  bench-regression failures before blocking.
+- *Pre-existing `fieldalignment` findings.* Mitigation: fix them in P0
+  itself; if any are intentional (e.g., padding for false-sharing
+  avoidance), annotate with `//nolint:fieldalignment` and a comment.
 
 ---
 
@@ -904,7 +1138,9 @@ Added:
   - `PolicyDrop` — current silent behaviour, kept only as an opt-in for
     backwards-compat investigation. Documented as discouraged.
 
-### 5.5 Testing obligations
+### 5.5 Testing and performance obligations
+
+**Functional testing:**
 
 - New table-driven tests for every command in D-5, comparing applied storage
   state against an oracle obtained from a real `redis-server` running in a
@@ -919,12 +1155,30 @@ Added:
   using `time.Sleep` in `heartbeat_*_test.go` are migrated as part of P1.
 - **`errors.AsType[T]` (Go 1.26)** is the preferred form in new code instead
   of the older `var x *T; errors.As(err, &x)` idiom.
-- **`testing.B.Loop` (Go 1.24+)** standard form for all benchmarks; the few
-  legacy `for i := 0; i < b.N; i++` benchmarks are migrated opportunistically.
 - **Race detector** (`go test -race`) is a CI gate for every package that
   starts goroutines.
 - **`govulncheck ./...`** runs in CI and blocks merge on any vulnerability
   reachable from our call graph.
+
+**Performance testing (D-10):**
+
+- **`testing.B.Loop` (Go 1.24+)** is the only allowed benchmark loop in new
+  code; legacy `for i := 0; i < b.N; i++` benchmarks are migrated
+  opportunistically. Mixed forms break benchstat comparability.
+- **Benchstat artefacts in every perf-sensitive PR.** PR body carries a
+  `<!-- benchstat -->` fenced block; the `benchstat-required` CI lint
+  enforces it.
+- **`bench-regression` CI job** runs `benchstat` against the committed P0
+  baseline and fails if any D-10 §10.1 budget is breached.
+- **Escape analysis** (`make escape-analysis`) inspected for every PR
+  changing hot-path files. Any new "escapes to heap" line inside a hot-path
+  function is a merge blocker.
+- **CPU and memory profiles** captured nightly and uploaded as CI
+  artefacts via a `bench-pprof` job; PR template asks "did you inspect
+  the profile?" for perf PRs.
+- **Adversarial workloads.** P3c oracle test fires 1 000 random commands;
+  P4a fixtures span 6 Redis versions; P5 e2e benchmarks `go-redis/v9` at
+  64 concurrent clients to stress the embedded server.
 
 ---
 
@@ -936,10 +1190,18 @@ Added:
   functional gain.
 - `replication/client.go` becomes six small files; future contributors can
   read each one in a single sitting.
-- True streaming RDB cuts peak memory roughly in half for large datasets.
+- **True streaming RDB cuts peak memory roughly in half** for large datasets
+  (P2 gate: ≥ 40 % reduction on the 50 MB ingest test).
+- **Hot-path budgets are now enforced in CI**, not aspirational. Future
+  contributors cannot regress `Get`/`Set` allocations without breaking the
+  build. This is a structural quality win that survives the refactor.
 - Partial resync removes the "always full sync after a 50 ms blip" tax.
 - A typed `Value` opens the door to native handler implementations of `INCR`,
   `LPUSH`, etc., which previously lived only in the master.
+- Function-typed appliers (D-5) and concrete `*MemoryStorage` calls inside
+  `internal/cmdapply` (D-10 §10.5) keep the live replication loop free of
+  interface boxing — an improvement over today's interface-mediated
+  dispatch.
 
 ### 6.2 Negative
 
@@ -948,9 +1210,19 @@ Added:
   parity.
 - Streams support is intentionally minimal at first (raw listpack passthrough
   on read). Full XREAD/XREADGROUP semantics are deferred.
+- **The typed `Value` carries up to a 3 % ns/op cost on string ops** vs the
+  current byte-slice-only path (the `Kind` switch in the hot path). D-10 §10.6
+  caps this at 3 % *only if* alloc/op stays at zero; alloc regressions are
+  not permitted. `[Inference]` based on similar tagged-union designs; actual
+  numbers come out of the P3 benchstat run.
+- **Performance gates raise the bar for every PR.** Contributors must learn
+  benchstat and escape analysis. We accept this cost because the library's
+  value proposition is performance.
 - Larger working set in memory: typed values carry small per-value overhead
-  vs. a single `[]byte`; estimated < 5 % on string-heavy workloads.
-  `[Speculation]` confirmation requires benchmarks after P3.
+  vs. a single `[]byte`. D-10 §10.1 budgets `Value` at ≤ 32 B (vs 24 B for a
+  bare `[]byte` header); ~33 % per-value overhead on string-heavy datasets.
+  `[Speculation]` aggregate impact depends on average key/value size;
+  confirmed by P3 memory benchmarks.
 
 ### 6.3 Neutral
 
@@ -965,11 +1237,15 @@ Added:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
+| **Hot-path regression sneaks in via the typed `Value` (D-2)** | **Medium** | **High** | D-10 §10.1 budgets are CI-enforced; PR-level benchstat block required; escape-analysis diff checked. P3 will not merge if alloc/op rises on `Get`/`Set`/`Del`. |
+| **Hidden allocation introduced by `internal/cmdapply` registry lookup** | Low | Medium | `map[string]Applier` lookup is allocation-free in Go; key is a `string` interned from the RESP byte slice via the single allowed `unsafe.String` helper (D-10 §10.5). Benchstat on the dispatcher in P3c. |
+| **`sync.Pool` items retain stale state across uses** | Medium | Medium | Pool items are `Reset()`-checked on `Get`; a `go vet` custom check (added in P0 if practical, otherwise reviewed manually) flags `Put` of dirty items. |
+| **Lua script cache unbounded growth** (pre-existing latent bug) | Low | Medium | `WithLuaScriptCacheSize` + LRU eviction in P5 (D-10 §10.5). Default 128; tunable. |
 | Stream type semantics drift from Redis 8.0 | Medium | Medium | Pin tests against real `redis-server:8.0` Docker image; degrade gracefully to passthrough if a new opcode appears. |
 | Partial-resync file corruption on crash | Low | Low | Atomic temp-file + rename; on parse error, fall back to full sync and log a warning. |
-| `tidwall/redcon` cannot replicate AUTH + per-connection SELECT semantics | Medium | Low | POC has explicit kill criterion; fallback path (native + registry) is already planned. |
-| Migration friction for embedders on v1 | High | Medium | `MIGRATING.md` with code-mod recipes; v1 branch kept on `release/v1` with critical bug fixes only for 6 months. |
-| Performance regression from typed Value | Medium | Low | Benchstat before/after on the existing benchmark suite; allow ≤ 5 % regression on string ops, target 0 % on key ops. |
+| `tidwall/redcon` cannot replicate AUTH + per-connection SELECT semantics, **or is slower than native** | Medium | Low | POC has explicit functional kill criterion **and** a perf tie-breaker (D-10 §10.6 P5 gate); fallback path (native + registry) is already planned. |
+| Migration friction for embedders on v1 | High | Medium | `MIGRATING.md` with code-mod recipes; `release/v1` branch kept for critical bug fixes only (window: Q-7). |
+| CI bench-regression false positives from runner noise | Medium | Low | `-count=6` minimum, benchstat p-value adjustment, retry-once policy before blocking. |
 
 ---
 
@@ -1036,3 +1312,4 @@ Added:
 | 2026-05-15 | Claude (revised) | Added D-9 (Go 1.26 baseline + modern-Go adoption); expanded §4 with phase-by-phase detail (P0–P5, multi-PR breakdown, per-phase tasks/tests/acceptance/risks); updated D-1 with `internal/app` and `internal/cmdapply` and `internal/observ`; updated D-4 with composition-root pattern; updated D-5 to make function-typed `Applier` explicit; added §5.5 obligations for `testing/synctest`, `errors.AsType[T]`, `testing.B.Loop`, race detector, `govulncheck`. |
 | 2026-05-15 | @raniellyferreira (decisions) | Q-1 resolved: keep same module path, no `/v2` suffix (§5.1 expanded with `+incompatible` strategy + sub-question Q-6). Q-2 resolved: `PolicyMetric` default. Q-3 resolved: streams raw passthrough in v2.0, full semantics deferred to v2.1. Q-4 resolved: Lua moves to `internal/lua` (D-1 layout updated). Q-5 resolved: prune examples to 4 (basic, monitoring, lua-demo, pattern-matching) in P5. New deferred questions Q-6 (exact tag) and Q-7 (v1 maintenance window) added in §8.2. |
 | 2026-05-15 | @raniellyferreira (revised after Codex PR #29 review) | **Q-1 superseded.** Codex correctly pointed out that `v2.0.0+incompatible` is invalid for modules that already have a `go.mod` (see `go.dev/ref/mod#non-module-compat`). Q-1 re-resolved as: **rename to `.../v2`** (Go-canonical). §5.1 rewritten with the `/v2` strategy, v1 maintenance line, and import-rewrite step. P3a task 5 restored to "rename module path". Q-6 (exact tag) resolved by the same correction (now simply `v2.0.0`). Q-7 (v1 maintenance window) remains deferred. |
+| 2026-05-15 | @raniellyferreira (perf elevation) | **Added D-10: performance as a first-class concern.** Defines hot/warm/cold path classification, per-budget CI gates (`bench-regression`, `benchstat-required`, escape-analysis), design rules carried through every phase (no interface boxing on hot paths, `Value` as struct not interface, `sync.Pool` only for temporaries, `unsafe.String` limited to two named helpers, struct field alignment vet, atomic for read-mostly counters, no `time.After` in loops, bounded Lua cache). Per-phase gates now have specific numeric budgets (P1: 0 % regression; P2: ≥ 40 % memory reduction on RDB ingest; P3: 0 alloc regression, ≤ 3 % ns/op on string ops; P5: ≤ 5 % latency p50 regression on go-redis round-trip). P0 expanded with `make baseline`, `make escape-analysis`, `bench-regression` and `benchstat-required` CI jobs. D-2 amended with performance non-negotiables for the typed `Value`. §1.3 elevates performance to a primary driver (not orthogonal). §5.5 split into functional and performance obligations. §6.1, §6.2, §7 updated with concrete perf impacts and risks. |
