@@ -4,7 +4,7 @@
 - **Date:** 2026-05-15 (revised same day)
 - **Deciders:** @raniellyferreira (project owner), engineering review pending
 - **Tags:** breaking-change, replication, storage, rdb, server, observability, go-1.26
-- **Target release:** next major iteration — see §5.1 for the Go module tag strategy implied by Q-1
+- **Target release:** v2.0.0 published at module path `github.com/raniellyferreira/redis-inmemory-replica/v2`; see §5.1 for migration strategy
 - **Toolchain baseline:** Go 1.26 (`go 1.26` in `go.mod`); see D-9
 - **Supersedes:** sections of ROADMAP.md (performance roadmap remains valid as a parallel concern)
 
@@ -591,10 +591,16 @@ the tree compiling and tested.
    ```go
    var _ Storage = (*MemoryStorage)(nil)
    ```
-5. **No module-path change** (per Q-1 resolution, §5.1). Internal imports
-   keep using `github.com/raniellyferreira/redis-inmemory-replica/internal/...`.
-   The breaking nature of P3a is carried by the import-line `MIGRATING.md`
-   recipes plus the `+incompatible` tag strategy (Q-6).
+5. **Rename module path** (per revised Q-1 resolution, §5.1):
+   - Edit `go.mod` top line to
+     `module github.com/raniellyferreira/redis-inmemory-replica/v2`.
+   - Rewrite all internal imports across the tree from
+     `github.com/raniellyferreira/redis-inmemory-replica/...` to
+     `github.com/raniellyferreira/redis-inmemory-replica/v2/...`.
+   - This is one mechanical commit at the head of P3a; the semantic
+     storage redesign comes in subsequent commits so the rename diff is
+     reviewable in isolation.
+   - Update `README.md` install command and CI workflow paths.
 
 **Tests.**
 
@@ -808,36 +814,47 @@ itself stays the source of truth for *intent*; issues track *status*.
 
 ### 5.1 Public API and module versioning strategy
 
-**Q-1 resolution:** keep the same module path
-(`github.com/raniellyferreira/redis-inmemory-replica`) — **no `/v2` suffix
-will be added**.
+**Q-1 resolution (revised 2026-05-15 after Codex review):** **rename the
+module path to `github.com/raniellyferreira/redis-inmemory-replica/v2`**.
+This is the only Go-canonical way to publish a v2+ tag from a repository
+that already has a `go.mod` file.
 
-This is a deliberate trade-off with consequences that must be understood by
-anyone tagging a release:
+**Why the earlier "+incompatible" strategy was wrong.** Go's module
+reference ([go.dev/ref/mod#non-module-compat](https://go.dev/ref/mod#non-module-compat))
+restricts `+incompatible` to modules that **do not** have a `go.mod`
+file ("not yet aware of module semantics"). This repository *has* a
+`go.mod` declaring `module github.com/raniellyferreira/redis-inmemory-replica`,
+so a `v2.0.0+incompatible` tag would be rejected by Go's tooling at
+release time. The original draft of this section proposed
+`+incompatible` and was incorrect; this revision fixes it.
 
-- **Go's module rule** (`go.dev/ref/mod#major-version-suffixes`): a module
-  at v2 or higher *must* either end in a major-version suffix (`/v2`,
-  `/v3`, …) **or** be marked `+incompatible`.
-- **Implication for this project:** because we are not adopting the suffix,
-  the next breaking release must be tagged either:
-  - **`v2.0.0+incompatible`** — Go's documented escape hatch for modules
-    that pre-date the path-suffix rule. `go get -u` will *not* upgrade
-    v1 users automatically; they must opt in with
-    `go get github.com/raniellyferreira/redis-inmemory-replica@v2.0.0+incompatible`.
-    Recommended path.
-  - **A v1.x.y tag with breaking changes** — violates semver and silently
-    breaks `go get -u` users. Not recommended.
-  - **A v0.x.y reset** — admits public-API instability but throws away
-    accumulated trust in v1 tags. Not recommended.
-- **PRs in this refactor** will therefore not assume a `/v2` import path;
-  files import `github.com/raniellyferreira/redis-inmemory-replica/internal/...`
-  as usual.
-- `MIGRATING.md` will list every renamed symbol with a one-line code-mod
-  recipe **and** open with a banner explaining the `+incompatible` tag and
-  the upgrade command.
+**Concrete consequences of the `/v2` rename:**
 
-**Sub-decision deferred:** the exact tag (`v2.0.0+incompatible` vs other)
-is recorded as **Q-6** in §8; it does not block any phase before P5.
+1. **`go.mod` top line changes** to
+   `module github.com/raniellyferreira/redis-inmemory-replica/v2`.
+2. **All internal imports change** from
+   `github.com/raniellyferreira/redis-inmemory-replica/...` to
+   `github.com/raniellyferreira/redis-inmemory-replica/v2/...`.
+   Mechanical sed across the tree; one commit.
+3. **v1 users keep working** because v1 tags remain valid at the old path
+   (`github.com/raniellyferreira/redis-inmemory-replica@v1.4.x`). They do
+   **not** auto-upgrade to v2 on `go get -u` — they must opt in.
+4. **v2 users opt in** with:
+   ```bash
+   go get github.com/raniellyferreira/redis-inmemory-replica/v2@latest
+   ```
+5. **Both versions can coexist** in a single program if needed (different
+   import paths), which gives consumers a soft-migration window.
+6. **`MIGRATING.md`** documents the import-line change as step 1, then
+   the renamed symbols (Storage methods, removed interfaces, etc.).
+
+**Timing.** The `go.mod` rename and import-path rewrite happen in **P3a**
+(the first BREAKING phase), gated behind a single mechanical commit so the
+rename is reviewable in isolation from the semantic changes.
+
+**The `release/v1` branch** is cut from the last v1.x.y commit (currently
+`v1.4.0`) before P3a lands, so v1 users have a clear maintenance line for
+critical fixes. The maintenance window length is tracked as Q-7 in §8.2.
 
 ### 5.2 Storage interface
 
@@ -960,9 +977,10 @@ Added:
 
 ### 8.1 Resolved (2026-05-15)
 
-- **Q-1 — Module path.** ✅ **Keep same path; do not add `/v2` suffix.**
-  Consequences in §5.1. Reviewer must confirm acceptance of the
-  `+incompatible` tag strategy before any v2 tag is cut.
+- **Q-1 — Module path.** ✅ **Rename to `.../v2`** (revised after Codex
+  review identified that `+incompatible` is invalid for modules that
+  already have a `go.mod` file). Mechanical sed at the head of P3a; v1
+  tags keep working at the old import path. Full strategy in §5.1.
 - **Q-2 — Default unsupported-command policy.** ✅ **`PolicyMetric`** (count
   + log + continue). See §5.4 for the full enum; `PolicyError` available as
   opt-in for replica-as-source-of-truth use cases.
@@ -977,15 +995,16 @@ Added:
   `lua-demo`, `pattern-matching`. Delete: `cluster`, `database-filtering`,
   `fixes-demo`, `psync-demo`, `rdb-logging-demo`, `replica-lua-demo`,
   `timeout-demo`. Pruning is part of P5.
+- **Q-6 — Exact tag.** ✅ **`v2.0.0`** at module path `.../v2`. (Resolved
+  by the same Codex correction that fixed Q-1; the prior deferral was
+  premised on `+incompatible`.)
 
 ### 8.2 New, deferred
 
-- **Q-6 — Exact tag for the v2 release.** Recommended: `v2.0.0+incompatible`
-  (Go's documented escape hatch). Alternatives in §5.1. Decision can wait
-  until P5 nears completion; pin it in the release-prep PR.
 - **Q-7 — `release/v1` maintenance window.** Risk register §7 already lists
   "v1 branch kept for 6 months". Reviewer to confirm 6 months is right,
-  given Q-1 means v1 users won't get auto-upgraded.
+  given Q-1 means v1 users have to explicitly opt in to `.../v2` and may
+  stay on v1 longer than expected.
 
 ---
 
@@ -1016,3 +1035,4 @@ Added:
 | 2026-05-15 | Claude (drafted) | Initial proposal, status = Proposed. |
 | 2026-05-15 | Claude (revised) | Added D-9 (Go 1.26 baseline + modern-Go adoption); expanded §4 with phase-by-phase detail (P0–P5, multi-PR breakdown, per-phase tasks/tests/acceptance/risks); updated D-1 with `internal/app` and `internal/cmdapply` and `internal/observ`; updated D-4 with composition-root pattern; updated D-5 to make function-typed `Applier` explicit; added §5.5 obligations for `testing/synctest`, `errors.AsType[T]`, `testing.B.Loop`, race detector, `govulncheck`. |
 | 2026-05-15 | @raniellyferreira (decisions) | Q-1 resolved: keep same module path, no `/v2` suffix (§5.1 expanded with `+incompatible` strategy + sub-question Q-6). Q-2 resolved: `PolicyMetric` default. Q-3 resolved: streams raw passthrough in v2.0, full semantics deferred to v2.1. Q-4 resolved: Lua moves to `internal/lua` (D-1 layout updated). Q-5 resolved: prune examples to 4 (basic, monitoring, lua-demo, pattern-matching) in P5. New deferred questions Q-6 (exact tag) and Q-7 (v1 maintenance window) added in §8.2. |
+| 2026-05-15 | @raniellyferreira (revised after Codex PR #29 review) | **Q-1 superseded.** Codex correctly pointed out that `v2.0.0+incompatible` is invalid for modules that already have a `go.mod` (see `go.dev/ref/mod#non-module-compat`). Q-1 re-resolved as: **rename to `.../v2`** (Go-canonical). §5.1 rewritten with the `/v2` strategy, v1 maintenance line, and import-rewrite step. P3a task 5 restored to "rename module path". Q-6 (exact tag) resolved by the same correction (now simply `v2.0.0`). Q-7 (v1 maintenance window) remains deferred. |
