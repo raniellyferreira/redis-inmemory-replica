@@ -88,7 +88,7 @@ The Redis source confirms the wire-level requirements:
 
 ## 2. Decisions
 
-The refactor is structured as **ten numbered decisions**. Each is independent
+The refactor is structured as **eleven numbered decisions**. Each is independent
 in principle but they are scheduled as five sequential phases (see §4).
 
 ### D-1 — Single repository layout, `internal/` for protocol, replication and composition root
@@ -226,7 +226,8 @@ becomes a thin call into `app.Run(ctx)`:
 | `internal/replproto/heartbeat.go` | Periodic ACK ticker with shared offset counter |
 | `internal/replproto/state.go` | `replicationState` enum (was `int32` plus booleans), shared offsets |
 
-Each file targets ≤ 350 lines. The public façade (`Replica`, `SyncManager`,
+Each file targets ≤ 350 lines (soft) and is bound by the **700-line hard
+cap from D-11**. The public façade (`Replica`, `SyncManager`,
 `SyncStatus`) remains; only its body shrinks to delegation.
 
 **Why.** Resolves I-1 and lifts the "huge `Replica.Start` body" anti-pattern
@@ -540,6 +541,95 @@ visible at PR review instead of post-merge.
   regressions compound. A 10 % regression on `Get` is a 10 % regression
   on every read in production.
 
+### D-11 — File size cap: 700 lines for non-test `.go` files (CI-enforced)
+
+**Decision.** **No non-test `.go` file may exceed 700 lines.** The cap is
+absolute and CI-enforced. `_test.go` files are exempt because they
+legitimately grow with table-driven cases and fixture data; production
+code does not get the same indulgence.
+
+**Soft target.** New code under `internal/` and new files in any package
+aim for ≤ 350 lines (the target restated in D-4 for the replication
+client split). 700 is the *hard* cap; 350 is the *aspiration*. The gap
+between 350 and 700 is for files that legitimately host a self-contained
+concept (e.g., a complete RESP parser) and where splitting would create
+artificial seams.
+
+#### 11.1 Current violators
+
+A baseline scan at the time of writing shows three files over the cap:
+
+| File | Lines | Plan |
+|------|-------|------|
+| `replication/client.go` | 1 446 | Already planned: split in P1 per D-4 |
+| `server/server.go` | 1 140 | Already planned: split in P5 per D-8 |
+| `storage/memory.go` | 994 | **New plan:** split in P3a (added to that phase's tasks) |
+
+`e2e_test.go` at 1 634 lines is exempt as a `_test.go` file but is on
+the "split when convenient" list — large test files slow down test-run
+caching and IDE responsiveness. Not a v2.0 blocker.
+
+#### 11.2 Why 700 and not 500 / 1000
+
+- **500** is too aggressive for files with rich documentation comments
+  (RDB parser, RESP types). It would force splits that hurt cohesion.
+- **1000** is too loose — `server/server.go` at 1 140 is precisely the
+  kind of "everything in one place" file we want to avoid, and 1000
+  would not have caught it during the development that produced it.
+- **700** matches the modern-Go community heuristic and leaves headroom
+  for legitimately large but focused files. It is large enough that we
+  expect ≤ 5 % of files to ever brush against it.
+
+#### 11.3 CI enforcement
+
+P0 adds a `make file-size-check` target and a `.github/workflows/lint.yml`
+step:
+
+```bash
+# fails with exit code 1 if any non-test .go file exceeds 700 lines
+find . -name '*.go' -not -name '*_test.go' -not -path './vendor/*' \
+  -exec wc -l {} + | awk '$1 > 700 && $2 != "total" { print; bad=1 } END { exit bad }'
+```
+
+A second variant warns at 600 lines (yellow zone) so contributors get
+early signal before tripping the gate.
+
+#### 11.4 Waiver process
+
+A waiver requires:
+1. A `//nolint:filesize // <one-line rationale>` annotation at the top of
+   the file.
+2. A linked issue explaining the planned split and target removal date.
+3. Maintainer approval in the PR.
+
+Waivers are visible (annotations + issue) and time-boxed (target date).
+No silent oversize files.
+
+#### 11.5 What is not in scope
+
+- **Function-level line caps.** Go has community conventions (Google
+  style guide suggests ~80 lines max per function) but enforcement is
+  noisy. Reviewers raise it case-by-case.
+- **Package-level file-count caps.** A package may legitimately have
+  many small files. No upper bound.
+- **Test-file caps.** `_test.go` exempt by rule. Reviewers nudge when a
+  test file passes ~2 000 lines but it is not a gate.
+
+**Why.** The single biggest readability win in P1 is splitting
+`replication/client.go`. The single biggest review friction we've seen
+historically is large files where a reviewer cannot hold the entire flow
+in working memory. A hard cap converts a perennial review conversation
+into a single CI check.
+
+**Alternatives considered.**
+
+- *Soft target only, no CI gate.* Rejected: soft targets erode. The
+  current state of the repo (three files > 700) is evidence.
+- *Stricter cap (500).* Rejected for the reasons in §11.2.
+- *Exempt generated files.* Not needed today (no `go generate` outputs
+  near the cap). If introduced later, the exemption goes in
+  `file-size-check` itself, not as a per-file `//nolint`.
+
 ---
 
 ## 3. Out of scope
@@ -625,9 +715,16 @@ baseline that gates every subsequent phase (D-10).
 7. **Add `go vet -fieldalignment`** to the lint workflow (already in
    golangci-lint v2.x as `fieldalignment`); fix any preexisting
    findings as part of P0 so later phases start clean.
-8. Verify CI matrix runs on Go 1.26 across all existing jobs.
-9. Update `README.md` Go version badge and add a short "Performance
-   guarantees" section pointing at D-10.
+8. **Add `make file-size-check`** (D-11): fail CI if any non-test `.go`
+   file exceeds 700 lines; warn at 600. Wired into `.github/workflows/lint.yml`.
+   Pre-existing violators (`replication/client.go`, `server/server.go`,
+   `storage/memory.go`) are scheduled for split in P1, P5, P3a
+   respectively and are allowed to remain over-cap only until their
+   phase lands. To unblock P0 itself, the gate is added in **report-only
+   mode** in P0 and **switched to blocking** at the start of P1.
+9. Verify CI matrix runs on Go 1.26 across all existing jobs.
+10. Update `README.md` Go version badge and add a short "Performance
+    guarantees" section pointing at D-10.
 
 **Tests added/changed.** None functional. Adds the CI gates above and a
 guard test `TestGoModVersion` that fails if `go.mod` regresses below
@@ -642,6 +739,10 @@ guard test `TestGoModVersion` that fails if `go.mod` regresses below
 - `benchstat-required` lint blocks a synthetic PR that edits
   `storage/memory.go` without a benchstat block (sanity).
 - `make escape-analysis` produces zero diff on a clean tree.
+- `make file-size-check` runs in **report-only mode**; the three known
+  violators (`replication/client.go`, `server/server.go`,
+  `storage/memory.go`) are listed in the workflow summary but do not
+  fail the run. The gate flips to blocking at the start of P1.
 
 **Risks.**
 
@@ -820,7 +921,20 @@ the tree compiling and tested.
      `Scan`, `MemoryUsage`, `SelectDB`, `CurrentDB`, `FlushAll`, `Info`.
    - List, Set, Hash, ZSet, Stream type-specific methods.
 3. Reimplement `storage/memory.go` for typed values; preserve sharding,
-   cleanup, sampling.
+   cleanup, sampling. **Simultaneously split the file** (D-11 — current
+   994 lines, must end below 700). Target layout:
+   - `storage/memory.go` (≤ 350 lines): orchestrator (`MemoryStorage`
+     struct, constructor, shard selection, generic ops `Del`/`Exists`/
+     `Type`/`Keys`/`Scan`/`MemoryUsage`/`SelectDB`/`FlushAll`/`Info`).
+   - `storage/memory_string.go`: `StringGet`/`StringSet`/`StringSetNX`/
+     `StringIncrBy`/`Append` and any string-only helpers.
+   - `storage/memory_list.go`, `memory_set.go`, `memory_hash.go`,
+     `memory_zset.go`, `memory_stream.go`: one file per `Kind`.
+   - `storage/memory_expire.go`: TTL/`Expire`/`PTTL`/`Persist` and the
+     sampling cleanup goroutine.
+   - `storage/memory_shard.go`: the shard struct, lock layout, and the
+     `shards` slice management (kept small to stay readable on the hot
+     path).
 4. Compile-time check at the package boundary:
    ```go
    var _ Storage = (*MemoryStorage)(nil)
@@ -1313,3 +1427,4 @@ Added:
 | 2026-05-15 | @raniellyferreira (decisions) | Q-1 resolved: keep same module path, no `/v2` suffix (§5.1 expanded with `+incompatible` strategy + sub-question Q-6). Q-2 resolved: `PolicyMetric` default. Q-3 resolved: streams raw passthrough in v2.0, full semantics deferred to v2.1. Q-4 resolved: Lua moves to `internal/lua` (D-1 layout updated). Q-5 resolved: prune examples to 4 (basic, monitoring, lua-demo, pattern-matching) in P5. New deferred questions Q-6 (exact tag) and Q-7 (v1 maintenance window) added in §8.2. |
 | 2026-05-15 | @raniellyferreira (revised after Codex PR #29 review) | **Q-1 superseded.** Codex correctly pointed out that `v2.0.0+incompatible` is invalid for modules that already have a `go.mod` (see `go.dev/ref/mod#non-module-compat`). Q-1 re-resolved as: **rename to `.../v2`** (Go-canonical). §5.1 rewritten with the `/v2` strategy, v1 maintenance line, and import-rewrite step. P3a task 5 restored to "rename module path". Q-6 (exact tag) resolved by the same correction (now simply `v2.0.0`). Q-7 (v1 maintenance window) remains deferred. |
 | 2026-05-15 | @raniellyferreira (perf elevation) | **Added D-10: performance as a first-class concern.** Defines hot/warm/cold path classification, per-budget CI gates (`bench-regression`, `benchstat-required`, escape-analysis), design rules carried through every phase (no interface boxing on hot paths, `Value` as struct not interface, `sync.Pool` only for temporaries, `unsafe.String` limited to two named helpers, struct field alignment vet, atomic for read-mostly counters, no `time.After` in loops, bounded Lua cache). Per-phase gates now have specific numeric budgets (P1: 0 % regression; P2: ≥ 40 % memory reduction on RDB ingest; P3: 0 alloc regression, ≤ 3 % ns/op on string ops; P5: ≤ 5 % latency p50 regression on go-redis round-trip). P0 expanded with `make baseline`, `make escape-analysis`, `bench-regression` and `benchstat-required` CI jobs. D-2 amended with performance non-negotiables for the typed `Value`. §1.3 elevates performance to a primary driver (not orthogonal). §5.5 split into functional and performance obligations. §6.1, §6.2, §7 updated with concrete perf impacts and risks. |
+| 2026-05-15 | @raniellyferreira (file-size cap) | **Added D-11: hard cap of 700 lines for non-test `.go` files; `_test.go` exempt.** Soft target 350. CI-enforced via `make file-size-check` added to P0 in report-only mode and flipped to blocking at the start of P1. Pre-existing violators identified: `replication/client.go` (1 446 — split in P1), `server/server.go` (1 140 — split in P5), `storage/memory.go` (994 — split added to P3a tasks with concrete file layout: `memory.go` orchestrator + per-Kind files + `memory_expire.go` + `memory_shard.go`). Waiver process: `//nolint:filesize` annotation + linked issue + maintainer approval + target removal date. D-4 wording aligned: 350 is soft target, 700 is the hard cap from D-11. |
