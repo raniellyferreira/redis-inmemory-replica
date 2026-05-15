@@ -709,7 +709,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 
 			if c.server.syncMgr != nil {
 				status := c.server.syncMgr.SyncStatus()
-				info.WriteString(fmt.Sprintf("master_host:%s\r\n", status.MasterHost))
+				fmt.Fprintf(&info, "master_host:%s\r\n", status.MasterHost)
 
 				if status.Connected {
 					info.WriteString("master_link_status:up\r\n")
@@ -719,7 +719,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 
 				// Calculate seconds since last sync
 				lastIO := int64(time.Since(status.LastSyncTime).Seconds())
-				info.WriteString(fmt.Sprintf("master_last_io_seconds_ago:%d\r\n", lastIO))
+				fmt.Fprintf(&info, "master_last_io_seconds_ago:%d\r\n", lastIO)
 
 				if status.InitialSyncCompleted {
 					info.WriteString("master_sync_in_progress:0\r\n")
@@ -727,7 +727,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 					info.WriteString("master_sync_in_progress:1\r\n")
 				}
 
-				info.WriteString(fmt.Sprintf("master_repl_offset:%d\r\n", status.ReplicationOffset))
+				fmt.Fprintf(&info, "master_repl_offset:%d\r\n", status.ReplicationOffset)
 			} else {
 				info.WriteString("master_host:unknown\r\n")
 				info.WriteString("master_link_status:down\r\n")
@@ -741,8 +741,8 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 		if section == "all" || section == "memory" {
 			info.WriteString("# Memory\r\n")
 			memoryUsage := c.server.storage.MemoryUsage()
-			info.WriteString(fmt.Sprintf("used_memory:%d\r\n", memoryUsage))
-			info.WriteString(fmt.Sprintf("used_memory_human:%s\r\n", formatBytes(memoryUsage)))
+			fmt.Fprintf(&info, "used_memory:%d\r\n", memoryUsage)
+			fmt.Fprintf(&info, "used_memory_human:%s\r\n", formatBytes(memoryUsage))
 			info.WriteString("\r\n")
 		}
 
@@ -761,7 +761,7 @@ func (c *Client) handleInfo(cmd *protocol.Command) {
 					if !ok {
 						expires = 0
 					}
-					info.WriteString(fmt.Sprintf("db%d:keys=%d,expires=%d\r\n", dbNum, keys, expires))
+					fmt.Fprintf(&info, "db%d:keys=%d,expires=%d\r\n", dbNum, keys, expires)
 				}
 				info.WriteString("\r\n")
 			}
