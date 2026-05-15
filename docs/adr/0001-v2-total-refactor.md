@@ -1,10 +1,10 @@
 # ADR 0001 — Total Refactor for v2.0: Polymorphic Storage, Streaming RDB, Modular Replication, Redis 6.0+ Compatibility
 
-- **Status:** Proposed
+- **Status:** Proposed (Q-1…Q-5 resolved 2026-05-15; awaiting reviewer sign-off)
 - **Date:** 2026-05-15 (revised same day)
 - **Deciders:** @raniellyferreira (project owner), engineering review pending
 - **Tags:** breaking-change, replication, storage, rdb, server, observability, go-1.26
-- **Target release:** v2.0.0
+- **Target release:** next major iteration — see §5.1 for the Go module tag strategy implied by Q-1
 - **Toolchain baseline:** Go 1.26 (`go 1.26` in `go.mod`); see D-9
 - **Supersedes:** sections of ROADMAP.md (performance roadmap remains valid as a parallel concern)
 
@@ -95,10 +95,14 @@ internal/
   rdb/         ← was replication/rdb.go + lzf.go
   cmdapply/    ← command applier registry (see D-5)
   observ/      ← unified Logger / MetricsCollector contracts (removes adapters.go)
+  lua/         ← was lua/ (moved per Q-4 resolution; only used by server/)
 ```
 
-The public surface keeps `storage/`, `server/`, `lua/` and the root package
-intact. The root package becomes a thin façade over `internal/app`.
+The public surface keeps `storage/`, `server/` and the root package intact.
+The root package becomes a thin façade over `internal/app`. The Lua engine
+ceases to be public: its only consumer is `server/`'s `EVAL` / `EVALSHA`
+handlers, so internal placement gives us freedom to evolve its API without
+semver pressure.
 
 **Why.** Today `protocol/` and `replication/` are *de facto* internal but
 exported, so any change is theoretically a breaking change. Moving them to
@@ -587,9 +591,10 @@ the tree compiling and tested.
    ```go
    var _ Storage = (*MemoryStorage)(nil)
    ```
-5. Bump module path: rename to
-   `github.com/raniellyferreira/redis-inmemory-replica/v2` (subject to
-   Q-1 confirmation).
+5. **No module-path change** (per Q-1 resolution, §5.1). Internal imports
+   keep using `github.com/raniellyferreira/redis-inmemory-replica/internal/...`.
+   The breaking nature of P3a is carried by the import-line `MIGRATING.md`
+   recipes plus the `+incompatible` tag strategy (Q-6).
 
 **Tests.**
 
@@ -801,12 +806,38 @@ itself stays the source of truth for *intent*; issues track *status*.
 
 ## 5. Compatibility, migration, deprecation
 
-### 5.1 Public API
+### 5.1 Public API and module versioning strategy
 
-- v1 → v2 is a hard break. We bump the module path **only** if the standard
-  Go semver-suffix rule applies (`/v2`). Default plan: yes, rename module to
-  `github.com/raniellyferreira/redis-inmemory-replica/v2`.
-- `MIGRATING.md` will list every renamed symbol with a one-line code mapping.
+**Q-1 resolution:** keep the same module path
+(`github.com/raniellyferreira/redis-inmemory-replica`) — **no `/v2` suffix
+will be added**.
+
+This is a deliberate trade-off with consequences that must be understood by
+anyone tagging a release:
+
+- **Go's module rule** (`go.dev/ref/mod#major-version-suffixes`): a module
+  at v2 or higher *must* either end in a major-version suffix (`/v2`,
+  `/v3`, …) **or** be marked `+incompatible`.
+- **Implication for this project:** because we are not adopting the suffix,
+  the next breaking release must be tagged either:
+  - **`v2.0.0+incompatible`** — Go's documented escape hatch for modules
+    that pre-date the path-suffix rule. `go get -u` will *not* upgrade
+    v1 users automatically; they must opt in with
+    `go get github.com/raniellyferreira/redis-inmemory-replica@v2.0.0+incompatible`.
+    Recommended path.
+  - **A v1.x.y tag with breaking changes** — violates semver and silently
+    breaks `go get -u` users. Not recommended.
+  - **A v0.x.y reset** — admits public-API instability but throws away
+    accumulated trust in v1 tags. Not recommended.
+- **PRs in this refactor** will therefore not assume a `/v2` import path;
+  files import `github.com/raniellyferreira/redis-inmemory-replica/internal/...`
+  as usual.
+- `MIGRATING.md` will list every renamed symbol with a one-line code-mod
+  recipe **and** open with a banner explaining the `+incompatible` tag and
+  the upgrade command.
+
+**Sub-decision deferred:** the exact tag (`v2.0.0+incompatible` vs other)
+is recorded as **Q-6** in §8; it does not block any phase before P5.
 
 ### 5.2 Storage interface
 
@@ -845,9 +876,16 @@ Kept:
 Added:
 
 - `WithReplStateFile(path string)` (D-7).
-- `WithUnsupportedCommandPolicy(policy Policy)` — `PolicyDrop` (current
-  silent behaviour, default), `PolicyError` (close replication and bubble
-  up), `PolicyMetric` (count and continue).
+- `WithUnsupportedCommandPolicy(policy Policy)` — three values:
+  - **`PolicyMetric`** *(default per Q-2)* — increment
+    `unsupported_command_total{command="..."}` counter, log at warn, keep
+    streaming. Safe for passive replicas where occasional unknown commands
+    must not break replication.
+  - `PolicyError` — fail loud: close the replication connection, surface
+    `ErrUnsupportedCommand` to the caller. Opt-in for users treating the
+    replica as a source of truth.
+  - `PolicyDrop` — current silent behaviour, kept only as an opt-in for
+    backwards-compat investigation. Documented as discouraged.
 
 ### 5.5 Testing obligations
 
@@ -918,21 +956,36 @@ Added:
 
 ---
 
-## 8. Open questions to confirm before implementation
+## 8. Open questions
 
-- **Q-1.** Is the `/v2` module-path rename acceptable, or do we keep the path
-  and rely on tag-only versioning? (Recommended: rename.)
-- **Q-2.** Should `WithUnsupportedCommandPolicy` default to `PolicyMetric`
-  (count + log + continue) or `PolicyError` (fail loud)? (Recommended:
-  `PolicyMetric` for a passive replica; opting into `PolicyError` for users
-  who treat the replica as a source of truth.)
-- **Q-3.** Stream support — is "raw listpack passthrough on read" acceptable
-  for v2.0, with full XREADGROUP scheduling deferred to v2.1?
-- **Q-4.** Do we keep the Lua engine in the same package or move it under
-  `internal/lua` since the public API is `EVAL`/`EVALSHA` via the embedded
-  server only?
-- **Q-5.** Examples directory has 11 entries. Recommend pruning to 4 (basic,
-  monitoring, lua, pattern-matching) to reduce maintenance — confirm.
+### 8.1 Resolved (2026-05-15)
+
+- **Q-1 — Module path.** ✅ **Keep same path; do not add `/v2` suffix.**
+  Consequences in §5.1. Reviewer must confirm acceptance of the
+  `+incompatible` tag strategy before any v2 tag is cut.
+- **Q-2 — Default unsupported-command policy.** ✅ **`PolicyMetric`** (count
+  + log + continue). See §5.4 for the full enum; `PolicyError` available as
+  opt-in for replica-as-source-of-truth use cases.
+- **Q-3 — Streams scope.** ✅ **Raw listpack passthrough in v2.0**;
+  consumer-group / XREADGROUP semantics deferred to v2.1. See D-6 and
+  §6.2. Replication state stays consistent because streams are stored
+  byte-for-byte; only *interactive* stream commands on the server side are
+  limited.
+- **Q-4 — Lua engine placement.** ✅ **Move to `internal/lua`** as part of
+  P1. Reflected in D-1 layout.
+- **Q-5 — Examples directory.** ✅ **Prune to 4**: `basic`, `monitoring`,
+  `lua-demo`, `pattern-matching`. Delete: `cluster`, `database-filtering`,
+  `fixes-demo`, `psync-demo`, `rdb-logging-demo`, `replica-lua-demo`,
+  `timeout-demo`. Pruning is part of P5.
+
+### 8.2 New, deferred
+
+- **Q-6 — Exact tag for the v2 release.** Recommended: `v2.0.0+incompatible`
+  (Go's documented escape hatch). Alternatives in §5.1. Decision can wait
+  until P5 nears completion; pin it in the release-prep PR.
+- **Q-7 — `release/v1` maintenance window.** Risk register §7 already lists
+  "v1 branch kept for 6 months". Reviewer to confirm 6 months is right,
+  given Q-1 means v1 users won't get auto-upgraded.
 
 ---
 
@@ -962,3 +1015,4 @@ Added:
 |------|--------|--------|
 | 2026-05-15 | Claude (drafted) | Initial proposal, status = Proposed. |
 | 2026-05-15 | Claude (revised) | Added D-9 (Go 1.26 baseline + modern-Go adoption); expanded §4 with phase-by-phase detail (P0–P5, multi-PR breakdown, per-phase tasks/tests/acceptance/risks); updated D-1 with `internal/app` and `internal/cmdapply` and `internal/observ`; updated D-4 with composition-root pattern; updated D-5 to make function-typed `Applier` explicit; added §5.5 obligations for `testing/synctest`, `errors.AsType[T]`, `testing.B.Loop`, race detector, `govulncheck`. |
+| 2026-05-15 | @raniellyferreira (decisions) | Q-1 resolved: keep same module path, no `/v2` suffix (§5.1 expanded with `+incompatible` strategy + sub-question Q-6). Q-2 resolved: `PolicyMetric` default. Q-3 resolved: streams raw passthrough in v2.0, full semantics deferred to v2.1. Q-4 resolved: Lua moves to `internal/lua` (D-1 layout updated). Q-5 resolved: prune examples to 4 (basic, monitoring, lua-demo, pattern-matching) in P5. New deferred questions Q-6 (exact tag) and Q-7 (v1 maintenance window) added in §8.2. |
