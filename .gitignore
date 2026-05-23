@@ -46,3 +46,7 @@ test_output.txt
 artifacts/
 *.prof
 *.pprof
+
+# ADR 0001 D-10 §10.4 — local baseline snapshots (not version-controlled;
+# baselines for CI live in workflow artifacts, not the repo)
+artifacts/baseline/
