@@ -1,7 +1,7 @@
 # Redis In-Memory Replica Library Makefile
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare
+.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare file-size-check file-size-check-blocking
 
 # Go parameters
 GOCMD=go
@@ -189,3 +189,8 @@ security-deps: ## Check dependencies for vulnerabilities
 	@go mod verify
 	@go mod tidy
 	@go list -m all
+file-size-check: ## Check .go file sizes against ADR D-11 budget (report-only by default)
+	@./scripts/lint/check-file-size.sh --report-only
+
+file-size-check-blocking: ## Check .go file sizes against ADR D-11 budget (blocking — fails on hard cap violations)
+	@./scripts/lint/check-file-size.sh --blocking
