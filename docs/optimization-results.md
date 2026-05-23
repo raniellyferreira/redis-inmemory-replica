@@ -245,5 +245,5 @@ The Lua engine optimization (91% allocation reduction, 86% latency reduction) co
 ---
 
 **Tested on:** AMD EPYC 7763 64-Core Processor, Linux amd64  
-**Go Version:** 1.25.2  
+**Go Version:** 1.25.5  
 **Date:** 2025-10-11
