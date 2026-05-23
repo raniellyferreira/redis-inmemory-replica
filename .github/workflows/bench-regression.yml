@@ -1,0 +1,248 @@
+name: Benchmark Regression Gate
+
+# ADR 0001 D-10 §10.4 / §10.6 — gates PRs that touch hot packages.
+#
+# Strategy
+# --------
+# On every push to `main`, a fresh baseline is captured and uploaded as a
+# workflow artifact named `main-baseline-${{ github.sha }}`. The latest
+# such artifact is fetched on PRs and used as the comparison point.
+#
+# On PRs that touch `storage/`, `protocol/`, `lua/`, `replication/`,
+# `server/`, or root-package code, this workflow:
+#   1. Captures a baseline at the PR's HEAD with the SAME script the
+#      developer would run locally (`scripts/perf/baseline.sh`).
+#   2. Downloads the most recent `main-baseline-*` artifact.
+#   3. Runs `scripts/perf/compare.sh` (existing) to diff the two with
+#      benchstat-style output.
+#   4. Publishes the comparison to the GitHub Step Summary so reviewers
+#      see it inline on the PR page.
+#
+# Mode
+# ----
+# **Report-only during P0.** This workflow surfaces regressions but
+# never fails the PR. Per ADR §4.P0 → §4.P1, the failure gates are
+# wired up after baselines stabilise and the team agrees on per-phase
+# thresholds (P1: 0 % regression; P2: ≥ 40 % RDB memory reduction; etc.).
+#
+# To flip to blocking mode in P1, change the `continue-on-error: true`
+# on the compare step to `false`, OR replace the script's `exit 0` with
+# threshold-based exit codes — both decisions belong with the P1 entry
+# PR, not here.
+#
+# Reduced parameters
+# ------------------
+# CI uses `count=3 benchtime=2s` (vs the local `count=5 benchtime=3s`
+# default in baseline.sh) so a PR run completes inside the runner budget.
+# `storage` alone takes ~15 min at these settings on ubuntu-latest. The
+# absolute numbers will differ between runs and runners — what matters
+# is the *delta* against the main-baseline captured on the same runner
+# family.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "storage/**"
+      - "protocol/**"
+      - "lua/**"
+      - "replication/**"
+      - "server/**"
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "scripts/perf/**"
+      - ".github/workflows/bench-regression.yml"
+  pull_request:
+    paths:
+      - "storage/**"
+      - "protocol/**"
+      - "lua/**"
+      - "replication/**"
+      - "server/**"
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "scripts/perf/**"
+      - ".github/workflows/bench-regression.yml"
+
+permissions:
+  contents: read
+  actions: read  # to list workflow artifacts
+
+env:
+  COUNT: 3
+  BENCHTIME: 2s
+  GOMAXPROCS: 4
+
+jobs:
+  capture-main-baseline:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Capture main baseline
+        run: |
+          GOMAXPROCS=${{ env.GOMAXPROCS }} \
+            ./scripts/perf/baseline.sh ${{ env.COUNT }} ${{ env.BENCHTIME }}
+
+      - name: Upload main baseline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-baseline-${{ github.sha }}
+          path: artifacts/baseline/
+          retention-days: 90
+          if-no-files-found: error
+
+  compare-pr-against-main:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Capture PR HEAD snapshot
+        run: |
+          GOMAXPROCS=${{ env.GOMAXPROCS }} \
+            ./scripts/perf/baseline.sh ${{ env.COUNT }} ${{ env.BENCHTIME }}
+          # Stash under a known name for the compare step
+          mv artifacts/baseline/latest artifacts/baseline/pr-head
+
+      - name: Fetch most recent main-baseline artifact
+        id: fetch_main
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const arts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              per_page: 100,
+            });
+            const candidates = arts
+              .filter(a => a.name.startsWith('main-baseline-') && !a.expired)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            if (candidates.length === 0) {
+              core.warning('No main-baseline artifact found yet — will skip comparison.');
+              core.setOutput('found', 'false');
+              return;
+            }
+            const target = candidates[0];
+            core.info(`Most recent main-baseline: ${target.name} (id=${target.id}, created=${target.created_at})`);
+            core.setOutput('found', 'true');
+            core.setOutput('artifact_id', target.id);
+            core.setOutput('artifact_name', target.name);
+
+      - name: Download main-baseline artifact
+        if: steps.fetch_main.outputs.found == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.fetch_main.outputs.artifact_name }}
+          path: main-baseline-download/
+
+      - name: Compare PR head vs main baseline
+        if: steps.fetch_main.outputs.found == 'true'
+        continue-on-error: true  # report-only during P0
+        run: |
+          # main-baseline-download holds the per-timestamp directories that
+          # baseline.sh produced on main. The "latest" symlink inside the
+          # artifact may not survive the round-trip; locate the newest
+          # timestamped directory by name.
+          main_dir=$(ls -d main-baseline-download/*/ 2>/dev/null \
+                     | grep -E '/[0-9]{8}_[0-9]{6}/$' \
+                     | sort | tail -1)
+          if [ -z "$main_dir" ]; then
+            echo "::warning::Could not locate timestamped baseline dir inside artifact"
+            exit 0
+          fi
+          main_dir="${main_dir%/}"
+          echo "main baseline: $main_dir"
+          echo "PR head:       artifacts/baseline/pr-head"
+
+          # Use the existing compare script for friendly human output
+          ./scripts/perf/compare.sh "$main_dir/bench-all.txt" \
+            artifacts/baseline/pr-head/bench-all.txt \
+            | tee compare-output.txt
+
+          # benchstat output for the step summary
+          benchstat "$main_dir/bench-all.txt" \
+            artifacts/baseline/pr-head/bench-all.txt \
+            > benchstat-output.txt 2>&1 || true
+
+      - name: Publish comparison to step summary
+        if: always()
+        run: |
+          {
+            echo "## ADR 0001 D-10 — Benchmark Regression Gate"
+            echo ""
+            echo "**Mode:** \`report-only\` (P0). Will flip to blocking gates in P1 per ADR §10.6."
+            echo ""
+            echo "**Parameters:** \`count=${{ env.COUNT }}\` · \`benchtime=${{ env.BENCHTIME }}\` · \`GOMAXPROCS=${{ env.GOMAXPROCS }}\`"
+            echo ""
+            if [ "${{ steps.fetch_main.outputs.found }}" != "true" ]; then
+              echo "> ℹ️ No \`main-baseline-*\` artifact found yet — comparison skipped."
+              echo "> The first push to \`main\` after this workflow lands will capture one."
+              echo ""
+            elif [ -s benchstat-output.txt ]; then
+              echo "### benchstat (main → PR head)"
+              echo '```'
+              cat benchstat-output.txt
+              echo '```'
+              echo ""
+              echo "### Friendly diff (\`scripts/perf/compare.sh\`)"
+              echo '```'
+              cat compare-output.txt
+              echo '```'
+            else
+              echo "_Comparison step did not produce output. See job log._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PR-head snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-head-baseline-${{ github.event.pull_request.number }}
+          path: artifacts/baseline/pr-head/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload comparison output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-regression-comparison
+          path: |
+            compare-output.txt
+            benchstat-output.txt
+          retention-days: 30
+          if-no-files-found: warn
