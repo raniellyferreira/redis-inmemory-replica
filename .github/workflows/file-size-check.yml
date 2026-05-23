@@ -1,0 +1,59 @@
+name: File-Size Budget Check
+
+# ADR 0001 D-11 — enforce a soft target of 350 lines and a hard cap of 700
+# lines on production .go files (test files exempt).
+#
+# This workflow runs in REPORT-ONLY mode during P0 of the v2 refactor
+# (per ADR §4.P0). It will be flipped to BLOCKING at the start of P1 by
+# changing the script flag below. Findings are published to the GitHub
+# Step Summary so authors and reviewers see them on every PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "**.go"
+      - "scripts/lint/check-file-size.sh"
+      - ".github/workflows/file-size-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  file-size-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run file-size budget check (report-only)
+        id: check
+        run: |
+          set +e
+          ./scripts/lint/check-file-size.sh --report-only | tee check-output.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Publish results to step summary
+        if: always()
+        run: |
+          {
+            echo "## ADR 0001 D-11 — File-Size Budget Check"
+            echo ""
+            echo "**Mode:** \`report-only\` (will flip to \`--blocking\` at the start of P1 of the v2 refactor)"
+            echo ""
+            echo "**Budgets:** soft target **350** lines · hard cap **700** lines · \`_test.go\` exempt"
+            echo ""
+            echo '```text'
+            cat check-output.txt
+            echo '```'
+            echo ""
+            echo "_See [ADR 0001 §D-11](../blob/main/docs/adr/0001-v2-total-refactor.md) for waiver process and split plan._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-size-check
+          path: check-output.txt
+          retention-days: 30
