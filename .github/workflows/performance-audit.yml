@@ -10,106 +10,25 @@ on:
     paths:
       - "storage/**"
       - "protocol/**"
-      - "replication/**"
       - "lua/**"
       - "**/*_bench_test.go"
       - "scripts/perf/**"
+      - ".github/workflows/performance-audit.yml"
+
+# Historical note: the monolithic `performance-audit` job that drove
+# `scripts/perf/bench.sh` across 5 packages with count=5/benchtime=3s was
+# removed in #33 (issue #31). It had been failing on `main` continuously
+# since 2025-12-21 because the configuration was too aggressive for an
+# ubuntu-latest runner (~70 min total, flaky) AND duplicated coverage that
+# `storage-benchmarks` / `protocol-benchmarks` already provide with more
+# sensible parameters. The root package's BenchmarkReplication* require a
+# Redis sidecar and were silently skipped in that job; they are covered by
+# `.github/workflows/benchmarks.yml` (which runs them with a Redis service).
+#
+# `scripts/perf/bench.sh` remains available for local developer use via
+# `make bench-all`. It is no longer invoked from CI.
 
 jobs:
-  performance-audit:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.3"
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@latest
-        continue-on-error: true
-
-      - name: Create artifacts directory
-        run: mkdir -p artifacts/bench artifacts/profiles
-
-      - name: Run benchmark suite
-        run: |
-          echo "Running comprehensive benchmark suite..."
-          echo "Configuration:"
-          echo "  GOMAXPROCS: 4"
-          echo "  Go version: $(go version)"
-
-          # Run benchmarks with fixed GOMAXPROCS for consistency
-          GOMAXPROCS=4 ./scripts/perf/bench.sh 5
-        env:
-          GOMAXPROCS: 4
-        continue-on-error: true
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "## Performance Audit Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Benchmarks completed at: $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f artifacts/bench/latest.txt ]; then
-            echo "### Results Overview" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Benchmark results saved to artifacts." >> $GITHUB_STEP_SUMMARY
-
-            # Count benchmarks
-            BENCH_COUNT=$(grep -c "^Benchmark" artifacts/bench/latest.txt || echo "0")
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- Total benchmarks run: **${BENCH_COUNT}**" >> $GITHUB_STEP_SUMMARY
-
-            # Extract some key metrics if available
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Sample Results" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            grep "^Benchmark" artifacts/bench/latest.txt | head -10 >> $GITHUB_STEP_SUMMARY || true
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No benchmark results found" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 Full results available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: benchmark-results
-          path: |
-            artifacts/bench/*.txt
-          retention-days: 30
-
-      - name: Upload profiles (if generated)
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: performance-profiles
-          path: |
-            artifacts/profiles/*.prof
-            artifacts/profiles/*.svg
-          retention-days: 7
-          if-no-files-found: ignore
-
   storage-benchmarks:
     runs-on: ubuntu-latest
 
@@ -213,5 +132,58 @@ jobs:
         with:
           name: protocol-benchmarks
           path: protocol_bench.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+  lua-benchmarks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run lua benchmarks
+        run: |
+          echo "Running Lua engine benchmarks..."
+          GOMAXPROCS=4 go test -bench=. -run=^$ -benchmem -benchtime=3s -count=3 ./lua/ | tee lua_bench.txt
+        env:
+          GOMAXPROCS: 4
+        continue-on-error: true
+
+      - name: Analyze lua performance
+        if: always()
+        run: |
+          echo "## Lua Engine Benchmark Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f lua_bench.txt ]; then
+            echo "### Lua Script Execution & Cache" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            grep "Benchmark" lua_bench.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload lua benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lua-benchmarks
+          path: lua_bench.txt
           retention-days: 30
           if-no-files-found: ignore
