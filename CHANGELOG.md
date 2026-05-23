@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-23
+
+This release consolidates nine months of work landed in `main` since `v1.4.0`
+(PRs #25, #26, #28, #29, #30). Public API is unchanged from `v1.4.x` — no
+breaking changes. Drop-in upgrade.
+
+This is the **final feature release of the v1 line**. Active development now
+moves to the v2 refactor (see ADR 0001 below), which will ship at module path
+`github.com/raniellyferreira/redis-inmemory-replica/v2`; v1.5.x will receive
+critical fixes only.
+
+### Added
+- **Performance audit infrastructure** with a comprehensive benchmark suite
+  covering `storage`, `lua`, `protocol`, `replication`, and the root package,
+  plus profiling scripts (`scripts/perf/bench.sh`, `compare.sh`, `profile.sh`)
+  and a scheduled CI workflow (`.github/workflows/performance-audit.yml`)
+  running weekly. (#25)
+- **ADR 0001 — v2 total refactor (Accepted)** at `docs/adr/0001-v2-total-refactor.md`
+  documenting the architectural roadmap for v2.0 (polymorphic `Value` model,
+  streaming RDB ingest, modular replication client, command-applier registry,
+  RDB type coverage for Redis 6.0–8.0, persistent partial-resync state,
+  Go 1.26 baseline, per-phase performance gates, 700-line hard cap on
+  non-test `.go` files). Status: **Accepted**. No functional impact on
+  v1.5.x. (#29)
+- **Project skills and agents under `.claude/`** (7 agents, 3 skills) so
+  contributors using Claude Code automatically follow this project's
+  engineering, code-review, and modern-Go standards. (#29)
+
+### Performance
+- **Lua script cache: ~86% latency reduction and ~91% allocation reduction**
+  via cache key restructuring and pre-sized allocations on the hot path. (#26 — B4)
+- **Storage key routing: ~25% throughput improvement** via `xxhash` for the
+  sharded in-memory storage introduced in v1.4.0. (#26 — B2)
+- **RESP parser: reduced allocations on the parse hot path.** (#26 — B1)
+- **RDB parser: batching and pre-sizing** for faster initial-sync ingest. (#26 — B3)
+- **GC tuning guide** added to the docs for high-throughput deployments. (#26 — B5)
+
+### Fixed
+- **Race condition in the Lua engine cache counters.** `cacheHits` and
+  `cacheMisses` were being incremented from `EvalSHA` without holding any
+  lock while `CacheStats()` read them under `RLock` — a real race detected
+  by `go test -race`. Now uses `sync/atomic` (`AddUint64` / `LoadUint64` /
+  `StoreUint64`), idiomatic and faster than re-locking. (#28)
+- **Cleanup of `INFO` command builders** in `server/server.go`: replaced
+  `WriteString(fmt.Sprintf(...))` with `fmt.Fprintf(...)` (staticcheck
+  QF1012, semantically identical, avoids an intermediate string
+  allocation). (#29)
+
+### Security
+- **`crypto/x509` vulnerabilities patched** by bumping the Go toolchain:
+  - **GO-2025-4175** — improper application of excluded DNS name constraints
+  - **GO-2025-4155** — excessive resource consumption when printing error strings
+  - **GO-2025-4007** — quadratic complexity when checking name constraints
+- **`govulncheck ./...` reports zero vulnerabilities** on this release.
+
+### Changed
+- **Go toolchain: 1.25.2 → 1.26.3** (latest stable as of 2026-05-23,
+  verified via https://go.dev/dl/). Updated `go.mod` and all CI workflows
+  (test, lint, e2e, redis-compatibility, security-audit, benchmarks,
+  performance-audit, release). (#28, #30)
+- **`github.com/cespare/xxhash/v2` promoted to direct dependency** —
+  it is actively used by storage sharding since v1.4.0 and by the new
+  RESP/storage optimizations in this release. (#28)
+
+### Internal
+- **`version.go` re-aligned with the published tag.** The `Version`
+  constant was `"1.1.0"` since v1.1.0 and had drifted from the actual
+  published tags (v1.2.0, v1.3.0, v1.4.0) — this release sets it to
+  `"1.5.0"`.
+
+### Compatibility notes
+- No public-API breakage. `import "github.com/raniellyferreira/redis-inmemory-replica"`
+  paths and all exported types, functions, and options are unchanged from
+  v1.4.x.
+- Minimum Go version (consumer-side) follows `go.mod`'s `go 1.26.3`
+  directive. Consumers on Go ≥ 1.26 are unaffected; consumers on Go
+  1.25.x must upgrade.
+- The v2 refactor (ADR 0001) will be published at a **different module
+  path** (`.../v2`), so v1.5.x and v2.x can coexist in a single program
+  during migration.
+
 ## [1.4.0] - 2025-08-11
 
 ### Added
