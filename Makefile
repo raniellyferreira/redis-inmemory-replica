@@ -1,7 +1,7 @@
 # Redis In-Memory Replica Library Makefile
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare file-size-check file-size-check-blocking
+.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare file-size-check file-size-check-blocking fieldalignment fieldalignment-blocking
 
 # Go parameters
 GOCMD=go
@@ -194,3 +194,9 @@ file-size-check: ## Check .go file sizes against ADR D-11 budget (report-only by
 
 file-size-check-blocking: ## Check .go file sizes against ADR D-11 budget (blocking — fails on hard cap violations)
 	@./scripts/lint/check-file-size.sh --blocking
+
+fieldalignment: ## Check struct field alignment per ADR D-10 §10.5 (report-only)
+	@./scripts/lint/check-fieldalignment.sh --report-only
+
+fieldalignment-blocking: ## Check struct field alignment per ADR D-10 §10.5 (blocking)
+	@./scripts/lint/check-fieldalignment.sh --blocking

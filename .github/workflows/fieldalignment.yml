@@ -1,0 +1,71 @@
+name: Struct Field Alignment Check
+
+# ADR 0001 D-10 §10.5 — surface struct misalignments that waste memory
+# on hot paths. Report-only during P0; fixes land per-PR, per-subsystem,
+# with `benchstat` before/after, as part of P3/P3a/P3b of the v2 refactor.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "**.go"
+      - "scripts/lint/check-fieldalignment.sh"
+      - ".github/workflows/fieldalignment.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fieldalignment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+
+      - name: Cache Go modules and tool binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+          key: ${{ runner.os }}-go-fa-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-fa-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run fieldalignment (report-only)
+        id: check
+        run: |
+          set +e
+          ./scripts/lint/check-fieldalignment.sh --report-only | tee fa-output.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Publish results to step summary
+        if: always()
+        run: |
+          {
+            echo "## ADR 0001 D-10 §10.5 — Struct Field Alignment"
+            echo ""
+            echo "**Mode:** \`report-only\` (fixes land in P3/P3a/P3b per-subsystem with benchstat before/after)"
+            echo ""
+            echo '```text'
+            cat fa-output.txt
+            echo '```'
+            echo ""
+            echo "_See [ADR 0001 D-10 §10.5](../blob/main/docs/adr/0001-v2-total-refactor.md) for the fix strategy._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fieldalignment
+          path: fa-output.txt
+          retention-days: 30
