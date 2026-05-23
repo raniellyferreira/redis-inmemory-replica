@@ -1,0 +1,121 @@
+name: benchstat Required (PR-body lint)
+
+# ADR 0001 D-10 §10.4 — every PR that touches hot paths must show
+# `benchstat` evidence in its body. This workflow lints the PR
+# description for that evidence.
+#
+# Mode
+# ----
+# **Report-only during P0.** The workflow warns when the evidence is
+# missing but never fails the PR. Flipping to blocking is a one-line
+# change (`exit 0` -> `exit 1` in the script step) and belongs with the
+# P1-entry PR per ADR §4.P0 → §4.P1.
+#
+# What counts as evidence
+# -----------------------
+# The PR body must contain at least one of:
+#   1. A fenced code block whose contents look like benchstat output:
+#      a line with the marker "name old time/op" OR
+#      a line matching `^Benchmark\w+`.
+#   2. The literal heading "## benchstat" or "## Benchmark" or
+#      "### benchstat" or "### Benchmark".
+#   3. A pointer to a CI artifact named `bench-regression-comparison`
+#      (the `bench-regression.yml` workflow uploads exactly this name
+#      on every hot-path PR — so just referencing it is enough).
+#
+# This is intentionally LIBERAL during P0. We want the cultural norm
+# established first; tightening the regex comes later.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+    paths:
+      - "storage/**"
+      - "protocol/**"
+      - "lua/**"
+      - "replication/**"
+      - "server/**"
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "scripts/perf/**"
+      - ".github/workflows/benchstat-required.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  benchstat-required:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        id: lint
+        with:
+          script: |
+            const body = (context.payload.pull_request && context.payload.pull_request.body) || "";
+            if (body.trim().length === 0) {
+              core.setOutput("status", "missing");
+              core.setOutput("reason", "PR body is empty");
+              return;
+            }
+
+            // 1. Heading like ## benchstat / ## Benchmark / ### benchstat / ### Benchmark
+            const headingRe = /^#{2,3}\s+(benchstat|Benchmark)/m;
+
+            // 2. Fenced block content looking like benchstat
+            //    Markers: "name old time/op", "old time/op    new time/op", or
+            //             a line beginning with Benchmark<UpperCaseLetter>...
+            const benchstatMarker = /name\s+old\s+time\/op/i;
+            const benchLineMarker = /^Benchmark[A-Z_]\w*[\s\-]/m;
+
+            // 3. Pointer to the CI comparison artifact
+            const artifactRef = /bench-regression-comparison/i;
+
+            let evidence = [];
+            if (headingRe.test(body))         evidence.push("heading");
+            if (benchstatMarker.test(body))   evidence.push("benchstat-output");
+            if (benchLineMarker.test(body))   evidence.push("bench-line");
+            if (artifactRef.test(body))       evidence.push("artifact-reference");
+
+            if (evidence.length > 0) {
+              core.setOutput("status", "ok");
+              core.setOutput("reason", `Evidence found: ${evidence.join(", ")}`);
+            } else {
+              core.setOutput("status", "missing");
+              core.setOutput("reason", "No benchstat evidence found in the PR body. Expected one of: a `## benchstat`/`## Benchmark` heading, a code block containing benchstat output, or a reference to the `bench-regression-comparison` artifact.");
+            }
+
+      - name: Publish result to step summary
+        if: always()
+        run: |
+          status="${{ steps.lint.outputs.status }}"
+          reason="${{ steps.lint.outputs.reason }}"
+          {
+            echo "## ADR 0001 D-10 §10.4 — benchstat-required PR-body lint"
+            echo ""
+            echo "**Mode:** \`report-only\` (P0). Will flip to blocking in P1 per ADR §4.P0 → §4.P1."
+            echo ""
+            if [ "$status" = "ok" ]; then
+              echo "✅ **PASS** — ${reason}"
+            else
+              echo "⚠️ **NOT YET** — ${reason}"
+              echo ""
+              echo "**How to satisfy this check:**"
+              echo ""
+              echo "Add one of the following to the PR body:"
+              echo ""
+              echo "1. A heading: \`## benchstat\` or \`## Benchmark\` followed by the output of \`benchstat baseline.txt head.txt\`."
+              echo "2. A fenced code block containing the literal line \`name old time/op new time/op delta\` (this is how \`benchstat\` headers its output)."
+              echo "3. A pointer to the \`bench-regression-comparison\` workflow artifact — the comparison ran on this PR automatically and the artifact is attached to the workflow run."
+              echo ""
+              echo "_During P0 this is informational only — the check will not fail your PR._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Exit (report-only)
+        run: |
+          status="${{ steps.lint.outputs.status }}"
+          echo "lint status: ${status}"
+          # P0: never fail. Flip the next line to `[ "$status" = "ok" ]` to enforce.
+          exit 0
