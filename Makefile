@@ -1,7 +1,7 @@
 # Redis In-Memory Replica Library Makefile
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare file-size-check file-size-check-blocking fieldalignment fieldalignment-blocking
+.PHONY: help build test lint clean examples install-tools benchmark coverage docs security-audit security-install security-scan security-static security-deps bench-all profile bench-compare file-size-check file-size-check-blocking fieldalignment fieldalignment-blocking baseline escape-analysis
 
 # Go parameters
 GOCMD=go
@@ -200,3 +200,9 @@ fieldalignment: ## Check struct field alignment per ADR D-10 §10.5 (report-only
 
 fieldalignment-blocking: ## Check struct field alignment per ADR D-10 §10.5 (blocking)
 	@./scripts/lint/check-fieldalignment.sh --blocking
+
+baseline: ## Capture a performance baseline snapshot (benchmarks + escape analysis + env) per ADR D-10 §10.4
+	@./scripts/perf/baseline.sh
+
+escape-analysis: ## Diff current escape-analysis output against the latest baseline
+	@./scripts/perf/escape-analysis.sh
